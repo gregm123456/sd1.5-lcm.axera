@@ -1,8 +1,8 @@
-# 模型转换
+# Model Conversion
 
-在 PC 上完成 ONNX 模型导出和 axmodel 模型编译. 注意, 如果想要获取工具链 `docker image` 需要走正规的发版流程.
+Complete ONNX model export and axmodel compilation on PC. Note that to obtain the toolchain `docker image`, you need to follow the official release process.
 
-## 安装依赖
+## Install Dependencies
 
 ```
 git clone https://github.com/AXERA-TECH/sd1.5-lcm.axera.git
@@ -10,9 +10,9 @@ cd model_convert
 pip install -r requirements.txt
 ```
 
-## 导出模型（Huggingface -> ONNX）
+## Export Models (Huggingface -> ONNX)
 
-下载 Huggingface 上对应的 Repo.
+Download the corresponding Repo from Huggingface.
 
 ```sh
 $ huggingface-cli download --resume-download latent-consistency/lcm-lora-sdv1-5 --local-dir latent-consistency/lcm-lora-sdv1-5
@@ -20,24 +20,24 @@ $ huggingface-cli download --resume-download latent-consistency/lcm-lora-sdv1-5 
 $ huggingface-cli download --resume-download Lykon/dreamshaper-7 --local-dir Lykon/dreamshaper-7
 ```
 
-运行脚本 `sd15_export_onnx.py` 导出 `text_encoder`, `unet` 以及 `vae` 的 `onnx` 模型.
+Run the script `sd15_export_onnx.py` to export the `text_encoder`, `unet`, and `vae` ONNX models.
 
 ```sh
 python3 sd15_export_onnx.py --input_path ./hugging_face/models/dreamshaper-7/ --input_lora_path ./hugging_face/models/lcm-lora-sdv1-5/ --output_path onnx-models
 ```
 
-默认导出的 `vae_encoder` 模型输入图像尺寸为 `512x512`, 如果需要其它尺寸可以在命令行使用 `--isize 256x256` 这样的命令去修改导出的尺寸.
+The default exported `vae_encoder` model input image size is `512x512`. If you need other sizes, you can use `--isize 256x256` in the command line to modify the exported size.
 
-导出需要花费一定的时间, 请耐心等待.
+Exporting takes some time, please be patient.
 
-导出后的文件目录如下所示:
+The exported file directory is as follows:
 
 ```sh
 ✗ tree -L 1 onnx-models
 onnx-models
 ├── a9a1a634-4cf5-11f0-b3ee-f5b7bf5aa809
 ├── sd15_text_encoder_sim.onnx
-├── time_input_img2img.npy # 注意在不同任务时选用不同的 time 输入
+├── time_input_img2img.npy # Note to use different time inputs for different tasks
 ├── time_input_txt2img.npy
 ├── unet.onnx
 ├── vae_decoder.onnx
@@ -46,7 +46,7 @@ onnx-models
 0 directories, 7 files
 ```
 
-注意, 如果使用 **最新版** 工具链在编译模型时出现下面的错误:
+Note: If using the **latest version** of the toolchain, when compiling models, if you encounter the following error:
 
 ```sh
 Traceback (most recent call last):
@@ -67,22 +67,22 @@ Traceback (most recent call last):
 AssertionError
 ```
 
-可以通过手动执行 `onnxslim` 命令, 通过优化导出的 `onnx` 模型来解决该错误. 示例命令如下:
+You can manually run the `onnxslim` command to optimize the exported ONNX model and resolve this error. Example command:
 
 ```bash
 pip3 install onnxslim
 onnxslim vae_encoder.onnx vae_encoder_slim.onnx
 ```
 
-## 生成量化数据集
+## Generate Quantization Dataset
 
-运行脚本 `sd15_lora_prepare_data.py` 准备 `Pulsar2` 编译依赖的 `Calibration` 数据集
+Run the script `sd15_lora_prepare_data.py` to prepare the `Calibration` dataset required by `Pulsar2` compilation.
 
 ```sh
-python3 sd15_lora_prepare_data.py --export_onnx_dir onnx-models[onnx导出目录]
+python3 sd15_lora_prepare_data.py --export_onnx_dir onnx-models[onnx export directory]
 ```
 
-代码执行结束后后进入 `datasets` 目录, 可以观察到目录结构如下所示:
+After the code execution, enter the `datasets` directory, and you can observe the directory structure as follows:
 
 ```sh
 datasets git:(yongqiang/dev) ✗ tree -L 1 calib_data_unet
@@ -99,31 +99,31 @@ calib_data_vae
 └── data.tar
 ```
 
-## 模型转换
+## Model Conversion
 
-在 `Axera` 工具链 `docker` 中分别执行下面的命令进行模型编译.
+In the `Axera` toolchain `docker`, execute the following commands respectively for model compilation.
 
-(1) 编译 `sd15_text_encoder_sim.onnx` 模型
+(1) Compile the `sd15_text_encoder_sim.onnx` model
 
 ```sh
 pulsar2 build --input onnx-models/sd15_text_encoder_sim.onnx  --output_dir axmodels  --output_name sd15_text_encoder_sim.axmodel --config configs/text_encoder_u16.json --quant.precision_analysis 1 --quant.precision_analysis_method EndToEnd
 ```
 
 
-(2) 编译 `vae_encoder.onnx` 模型
+(2) Compile the `vae_encoder.onnx` model
 
 ```sh
 pulsar2 build --input onnx-models/vae_encoder.onnx  --output_dir axmodels  --output_name vae_encoder.axmodel --config configs/vae_encoder_u16.json --quant.precision_analysis 1 --quant.precision_analysis_method EndToEnd
 ```
 
 
-(3) 编译 `vae_decoder.onnx` 模型
+(3) Compile the `vae_decoder.onnx` model
 
 ```sh
 pulsar2 build --input onnx-models/vae_decoder.onnx  --output_dir axmodels  --output_name vae_decoder.axmodel --config configs/vae_u16.json --quant.precision_analysis 1 --quant.precision_analysis_method EndToEnd
 ```
 
-(4) 编译 `unet.onnx` 模型
+(4) Compile the `unet.onnx` model
 
 ```sh
 pulsar2 build  --input onnx-models/unet.onnx  --output_dir axmodels  --output_name unet.axmodel --config configs/unet_u16.json --quant.precision_analysis 1 --quant.precision_analysis_method EndToEnd

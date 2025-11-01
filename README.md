@@ -1,34 +1,34 @@
 # SD1.5-LCM.Axera
 
-基于 StableDiffusion 1.5 LCM 项目, 展示该项目在 `Axera` 芯片上部署的流程.
+This project demonstrates how to deploy the StableDiffusion 1.5 LCM (Latent Consistency Model) project on Axera hardware.
 
-支持芯片:
+Supported chip:
 
 - AX650N
 
-原始模型请参考:
+Original models referenced:
 
-- [Latent Consistency Model (LCM) LoRA: SDv1-5](https://huggingface.co/latent-consistency/lcm-lora-sdv1-5)
-- [Dreamshaper 7](https://huggingface.co/Lykon/dreamshaper-7)
+- Latent Consistency Model (LCM) LoRA: SDv1-5: https://huggingface.co/latent-consistency/lcm-lora-sdv1-5
+- Dreamshaper 7: https://huggingface.co/Lykon/dreamshaper-7
 
-克隆仓库:
+Clone the repository:
 
 ```sh
 git clone https://github.com/AXERA-TECH/sd1.5-lcm.axera
 cd sd1.5-lcm.axera
 ```
 
-其中 `model_convert` 文件夹用于模型编译转换, 具体请参考[模型转换文档](model_convert/README.md). `python` 文件夹内主要存放运行脚本.
- 
-## ONNX 以及 AXMODEL 推理
+The `model_convert` folder contains tools and scripts for compiling and converting models — see the model conversion documentation at `model_convert/README.md`. The `python` folder contains inference scripts.
 
-当模型文件编译转换完成之后, 可以进入 `python` 文件夹内执行生图任务.
+## ONNX and AXMODEL Inference
+
+After you finish converting and compiling model files, go to the `python` folder to run text-to-image or image-to-image tasks.
 
 ```sh
 cd sd1.5-lcm.axera/python
 ```
 
-文件夹内可以按照下面的格式进行组织
+A typical `models/` layout looks like this:
 
 ```sh
 ai@ai-bj ~/yongqiang/sd1.5-lcm.axera/python $ tree -L 2 models/
@@ -54,26 +54,27 @@ models/
 2 directories, 15 files
 ```
 
-这样可以很方便地以下面的代码执行 onnx 或 axmodel 的文生图和图生图任务.
+With this layout you can run ONNX or AXMODEL inference for text-to-image and image-to-image tasks using the provided scripts:
 
 ```sh
 python3 run_txt2img_axe[onnx]_infer.py --prompt "your prompt"
 python3 run_img2img_axe[onnx]_infer.py --prompt "your prompt"
 ```
 
-### 运行
+### Running on Axera
 
-在 `Axera` 开发板上推理时会用到前面编译好的 `axmodel` 模型, 推理脚本为 `run_txt2img_axe_infer.py` 和 `run_img2img_axe_infer.py`. 一个用于文生图任务, 一个用于图生图任务.
+On an Axera development board, inference uses the precompiled `axmodel` files. The main scripts are `run_txt2img_axe_infer.py` (text-to-image) and `run_img2img_axe_infer.py` (image-to-image).
 
-#### 文生图任务
+#### Text-to-Image Example
 
-**Input Prompt**
+Input prompt example:
 
 ```
 "((masterpiece,best quality))1 young beautiful girl,ultra detailed,official art,unity 8k wallpaper,masterpiece, best quality, official art, extremely detailed CG unity 8k wallpaper, highly detailed, 1 girl, aqua eyes, light smile, ((grey hair)), hair flower, bracelet, choker, ribbon, JK, look at viewer, on the beach, in summer,"
 ```
 
-**Output Log**
+Example output log:
+
 ```sh
 ai@ai-bj ~/yongqiang/sd1.5-lcm.axera/python $ python3 run_txt2img_axe_infer.py --prompt "((masterpiece,best quality))1 young beautiful girl,ultra detailed,official art,unity 8k wallpaper,masterpiece, best quality, official art, extremely detailed CG unity 8k wallpaper, highly detailed, 1 girl, aqua eyes, light smile, ((grey hair)), hair flower, bracelet, choker, ribbon, JK, look at viewer, on the beach, in summer,"
 [INFO] Available providers:  ['AXCLRTExecutionProvider']
@@ -108,40 +109,40 @@ vae inference take 930.4ms
 save image take 123.3ms
 ```
 
-**Output Image**
+Output image:
 
 ![](assets/txt2img_output_axe.png)
 
-#### 图生图任务
+#### Image-to-Image Example
 
-**Input Image & Prompt**
+Input image and prompt:
 
-输入一张初始图像以及对应的 prompt, 图像如下:
+Provide an initial image and prompt. Example initial image:
 
 ![](assets/img2img-init.png)
 
-运行
+Run:
 
-```
+```sh
 python3 run_img2img_axe_infer.py --init_image models/img2img-init.png --prompt "Astronauts in a jungle, cold color palette, muted colors, detailed, 8k"
 ```
 
-**Output Image**
+Output image:
 
 ![](assets/lcm_lora_sdv1-5_imgGrid_output.png)
 
-图中(右)即为图生图的结果.
+The right-hand image is the image-to-image result.
 
-## 相关项目
+## Related Projects
 
-NPU 工具链 [Pulsar2 在线文档](https://pulsar2-docs.readthedocs.io/zh-cn/latest/)
+NPU toolchain: Pulsar2 documentation — https://pulsar2-docs.readthedocs.io/zh-cn/latest/
 
-## 技术讨论
-Github issues
-QQ 群: 139953715
+## Discussion
 
-## 免责声明
+Open an issue on GitHub or join the QQ group: 139953715
 
-- 本项目只用于指导如何将 [Latent Consistency Model (LCM) LoRA: SDv1-5](https://huggingface.co/latent-consistency/lcm-lora-sdv1-5) 开源项目的模型部署在 AX650N 上
-- 该模型存在的固有的局限性, 可能产生错误的、有害的、冒犯性的或其他不良的输出等内容与 AX650N 以及本仓库所有者无关
-- [免责声明](./Disclaimer.md)
+## Disclaimer
+
+- This project is intended only as a guide for deploying the Latent Consistency Model (LCM) LoRA (SDv1-5) open-source models on AX650N.
+- The models have inherent limitations and may produce incorrect, harmful, offensive, or otherwise undesirable outputs; such outputs are unrelated to AX650N hardware or the repository owners.
+- See the full disclaimer: ./Disclaimer.md
