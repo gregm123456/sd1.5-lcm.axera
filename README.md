@@ -70,15 +70,15 @@ On an Axera development board, inference uses the precompiled `axmodel` files. T
 Input prompt example:
 
 ```
-"((masterpiece,best quality))1 young beautiful girl,ultra detailed,official art,unity 8k wallpaper,masterpiece, best quality, official art, extremely detailed CG unity 8k wallpaper, highly detailed, 1 girl, aqua eyes, light smile, ((grey hair)), hair flower, bracelet, choker, ribbon, JK, look at viewer, on the beach, in summer,"
+"masterpiece, best quality, serene mountain lake at sunrise, ultra-detailed landscape, soft pastel colors, fog on the water, pine trees, reflection, 8k"
 ```
 
 Example output log:
 
 ```sh
-ai@ai-bj ~/yongqiang/sd1.5-lcm.axera/python $ python3 run_txt2img_axe_infer.py --prompt "((masterpiece,best quality))1 young beautiful girl,ultra detailed,official art,unity 8k wallpaper,masterpiece, best quality, official art, extremely detailed CG unity 8k wallpaper, highly detailed, 1 girl, aqua eyes, light smile, ((grey hair)), hair flower, bracelet, choker, ribbon, JK, look at viewer, on the beach, in summer,"
+ai@ai-bj ~/yongqiang/sd1.5-lcm.axera/python $ python3 run_txt2img_axe_infer.py --prompt "masterpiece, best quality, serene mountain lake at sunrise, ultra-detailed landscape, soft pastel colors, fog on the water, pine trees, reflection, 8k"
 [INFO] Available providers:  ['AXCLRTExecutionProvider']
-prompt: ((masterpiece,best quality))1 young beautiful girl,ultra detailed,official art,unity 8k wallpaper,masterpiece, best quality, official art, extremely detailed CG unity 8k wallpaper, highly detailed, 1 girl, aqua eyes, light smile, ((grey hair)), hair flower, bracelet, choker, ribbon, JK, look at viewer, on the beach, in summer,
+prompt: masterpiece, best quality, serene mountain lake at sunrise, ultra-detailed landscape, soft pastel colors, fog on the water, pine trees, reflection, 8k
 text_tokenizer: ./models/tokenizer
 text_encoder: ./models/text_encoder
 unet_model: ./models/unet.axmodel

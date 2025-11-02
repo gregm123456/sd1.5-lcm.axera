@@ -422,7 +422,6 @@ if __name__ == '__main__':
     start = time.time()    
     # prompt = "Self-portrait oil painting, a beautiful cyborg with golden hair, 8k"
     # prompt = "Astronauts in a jungle, cold color palette, muted colors, detailed, 8k"
-    # prompt = "Caricature, a beautiful girl with black hair, 8k"
     prompt_embeds_npy = get_embeds(prompt, tokenizer, text_encoder)
     print(f"get_embeds take {(1000 * (time.time() - start)):.1f}ms")
 

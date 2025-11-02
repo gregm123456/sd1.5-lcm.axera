@@ -53,7 +53,7 @@ def _maybe_convert_prompt(prompt: str, tokenizer: "PreTrainedTokenizer"):  # noq
     return prompt
 
 
-def get_embeds(prompt = "Portrait of a pretty girl", tokenizer_dir = "./models/tokenizer", text_encoder_dir = "./models/text_encoder"):
+def get_embeds(prompt = "Portrait of a pretty landscape", tokenizer_dir = "./models/tokenizer", text_encoder_dir = "./models/text_encoder"):
     tokenizer = CLIPTokenizer.from_pretrained(tokenizer_dir)
 
     text_inputs = tokenizer(

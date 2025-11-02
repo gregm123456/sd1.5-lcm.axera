@@ -40,7 +40,7 @@ def _maybe_convert_prompt(prompt: str, tokenizer: "PreTrainedTokenizer"):  # noq
     return prompt
 
 
-def get_embeds(model_path, prompt = "Portrait of a pretty girl", ):
+def get_embeds(model_path, prompt = "Portrait of a pretty landscape", ):
     tokenizer = CLIPTokenizer.from_pretrained("./tokenizer")
     # text_encoder = CLIPTextModel.from_pretrained("Lykon/dreamshaper-7",
     #                                              torch_dtype=torch.float32,
@@ -102,7 +102,7 @@ if __name__ == '__main__':
                'woman with a blue headscarf and a blue sweaterp',
                'Kung Fu Panda',
                'a majestic snowy mountain range under a clear night sky filled with sparkling stars and a bright Milky Way',
-               'Portrait of a pretty girl',
+               'Portrait of a pretty landscape',
                'A brain riding a rocketship heading towards the moon',
                'a robot with rockets blasting off from its feet',
                'A dragon fruit wearing karate belt in the snow.',
