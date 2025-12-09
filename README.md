@@ -146,3 +146,16 @@ Open an issue on GitHub or join the QQ group: 139953715
 - This project is intended only as a guide for deploying the Latent Consistency Model (LCM) LoRA (SDv1-5) open-source models on AX650N.
 - The models have inherent limitations and may produce incorrect, harmful, offensive, or otherwise undesirable outputs; such outputs are unrelated to AX650N hardware or the repository owners.
 - See the full disclaimer: ./Disclaimer.md
+
+## Note about server-generated outputs
+
+If you run the unified HTTP server (`pi_axera_sd_service/pi_axera_sd_generator.py`), the service saves a local PNG copy of every generated image for diagnostics.
+
+- Default output directory: `pi_axera_sd_service/output/` (configurable with the `OUTPUT_DIR` environment variable).
+- Files are named like `gen_<timestamp>.png` and the service returns the saved path in the JSON response when saving succeeds.
+- The server does not perform automatic rotation or cleanup; if you generate images frequently, add a retention policy (cron, systemd tmpfiles.d, or a pruning script) to avoid filling disk.
+
+Example quick cleanup (delete files older than 7 days):
+```bash
+find pi_axera_sd_service/output -type f -name 'gen_*.png' -mtime +7 -delete
+```
