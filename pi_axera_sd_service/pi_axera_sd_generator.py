@@ -331,6 +331,88 @@ def generate_route():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+@app.route("/sdapi/v1/txt2img", methods=["POST"])
+def sdapi_txt2img():
+    try:
+        data = request.get_json(force=True)
+        prompt = data.get("prompt", "")
+        if not prompt:
+            return jsonify({"error": "missing 'prompt' field"}), 400
+
+        # Generate image using existing function
+        pil_image, text_time, total_time = generate_txt2img(prompt)
+
+        # Encode to base64
+        buffer = BytesIO()
+        pil_image.save(buffer, format="PNG")
+        img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+        # Format response like SD WebUI API
+        response = {
+            "images": [img_base64],
+            "parameters": {
+                "prompt": prompt,
+                "steps": 4,  # Fixed for LCM
+                "width": 512,
+                "height": 512,
+            },
+            "info": f"Generated in {total_time:.2f}ms"
+        }
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/sdapi/v1/img2img", methods=["POST"])
+def sdapi_img2img():
+    try:
+        data = request.get_json(force=True)
+        prompt = data.get("prompt", "")
+        if not prompt:
+            return jsonify({"error": "missing 'prompt' field"}), 400
+
+        init_images = data.get("init_images", [])
+        if not init_images:
+            return jsonify({"error": "missing 'init_images' field"}), 400
+
+        # Decode base64 image
+        init_image_b64 = init_images[0]
+        try:
+            init_image_data = base64.b64decode(init_image_b64)
+            init_image = Image.open(BytesIO(init_image_data)).convert("RGB")
+            # Resize to 512x512 if needed
+            if init_image.size != (512, 512):
+                init_image = init_image.resize((512, 512), Image.LANCZOS)
+        except Exception as e:
+            return jsonify({"error": f"invalid base64 image: {str(e)}"}), 400
+
+        # Generate image using existing function
+        pil_image, text_time, total_time = generate_img2img(prompt, init_image)
+
+        # Encode to base64
+        buffer = BytesIO()
+        pil_image.save(buffer, format="PNG")
+        img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+        # Format response like SD WebUI API
+        response = {
+            "images": [img_base64],
+            "parameters": {
+                "prompt": prompt,
+                "init_images": init_images,
+                "steps": 4,  # Fixed for LCM
+                "width": 512,
+                "height": 512,
+            },
+            "info": f"Generated in {total_time:.2f}ms"
+        }
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     # default host/port
     host = os.environ.get("HOST", "127.0.0.1")
