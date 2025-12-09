@@ -197,7 +197,10 @@ def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS):
     return pil_image, text_time, total_time
 
 
-def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray = DEFAULT_TIMESTEPS):
+def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray = None):
+    # Use only two steps for img2img, matching the script
+    if timesteps is None:
+        timesteps = np.array([499, 259]).astype(np.int64)
     prompt = maybe_convert_prompt(prompt, tokenizer)
 
     start_total = time.time()
