@@ -172,3 +172,7 @@ cython_debug/
 # Project-specific large folders (models and external model bundles)
 models/
 lcm-lora-sdv1-5/
+
+# Local test response files
+resp.json
+#img_resp.json
