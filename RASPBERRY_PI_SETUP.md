@@ -76,52 +76,63 @@ python python/run_txt2img_axe_server.py
 
 - The server prints a message like `Starting server on http://127.0.0.1:5000  (output -> ./txt2img_server_output)` and will load the tokenizer and models once at startup. Startup may take many seconds or minutes depending on device.
 
-## Example request
+## Run the unified server manually
 
+The unified server supports both txt2img and img2img modes with a single `/generate` endpoint.
+
+From the repository root:
+
+```bash
+source ~/sd_env/bin/activate
+# optionally set paths if not default
+export TEXT_MODEL_DIR=./models/
+export UNET_MODEL=./models/unet.axmodel
+export VAE_DECODER_MODEL=./models/vae_decoder.axmodel
+export VAE_ENCODER_MODEL=./models/vae_encoder.axmodel
+export TIME_INPUT_TXT2IMG=./models/time_input_txt2img.npy
+export TIME_INPUT_IMG2IMG=./models/time_input_img2img.npy
+export OUTPUT_DIR=./pi_axera_sd_service/output
+
+python pi_axera_sd_service/pi_axera_sd_generator.py
+```
+
+## Example requests for unified server
+
+txt2img:
 ```bash
 curl -X POST http://127.0.0.1:5000/generate \
   -H "Content-Type: application/json" \
-  -d '{"prompt":"A photograph of a red fox in the snow, highly detailed"}'
+  -d '{"mode": "txt2img", "prompt": "A photograph of a red fox in the snow, highly detailed"}'
+```
+
+img2img:
+```bash
+curl -X POST http://127.0.0.1:5000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "img2img", "prompt": "Convert to sketch", "init_image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}'
 ```
 
 Response example (JSON):
 
 ```json
-{"status":"ok","path":"./txt2img_server_output/gen_1700000000000.png","text_time_ms":XXX,"total_time_ms":YYY}
+{"status":"ok","base64":"<base64 PNG>","text_time_ms":123.45,"total_time_ms":456.78}
 ```
 
-## Run as a background service (systemd)
+## Run the unified server as a background service (systemd)
 
-Create a systemd unit to keep the server running and restart on failure. Example `/etc/systemd/system/sd_txt2img.service`:
+Create a systemd unit for the unified service. Copy the service file:
 
-```ini
-[Unit]
-Description=StableDiffusion axengine server
-After=network.target
-
-[Service]
-User=pi
-WorkingDirectory=/home/pi/sd1.5-lcm.axera_greg
-Environment=TEXT_MODEL_DIR=/home/pi/sd1.5-lcm.axera_greg/models/
-Environment=UNET_MODEL=/home/pi/sd1.5-lcm.axera_greg/models/unet.axmodel
-Environment=VAE_DECODER_MODEL=/home/pi/sd1.5-lcm.axera_greg/models/vae_decoder.axmodel
-Environment=TIME_INPUT=/home/pi/sd1.5-lcm.axera_greg/models/time_input_txt2img.npy
-Environment=OUTPUT_DIR=/home/pi/sd1.5-lcm.axera_greg/txt2img_server_output
-ExecStart=/home/pi/sd_env/bin/python /home/pi/sd1.5-lcm.axera_greg/python/run_txt2img_axe_server.py
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
+```bash
+sudo cp pi_axera_sd_service/pi_axera_sd_generator.service /etc/systemd/system/
 ```
 
 Then enable and start:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable sd_txt2img.service
-sudo systemctl start sd_txt2img.service
-sudo journalctl -u sd_txt2img.service -f
+sudo systemctl enable pi_axera_sd_generator
+sudo systemctl start pi_axera_sd_generator
+sudo journalctl -u pi_axera_sd_generator -f
 ```
 
 ## Performance tips and memory constraints

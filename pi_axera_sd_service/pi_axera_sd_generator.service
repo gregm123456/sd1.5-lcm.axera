@@ -1,0 +1,22 @@
+[Unit]
+Description=Pi Axera SD Image Generator Service
+After=network.target
+
+[Service]
+Type=simple
+User=gregm
+WorkingDirectory=/home/gregm/sd1.5-lcm.axera_greg
+ExecStart=/usr/bin/python3 pi_axera_sd_service/pi_axera_sd_generator.py
+Restart=on-failure
+Environment=TEXT_MODEL_DIR=/home/gregm/sd1.5-lcm.axera_greg/models/
+Environment=UNET_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/unet.axmodel
+Environment=VAE_DECODER_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/vae_decoder.axmodel
+Environment=VAE_ENCODER_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/vae_encoder.axmodel
+Environment=TIME_INPUT_TXT2IMG=/home/gregm/sd1.5-lcm.axera_greg/models/time_input_txt2img.npy
+Environment=TIME_INPUT_IMG2IMG=/home/gregm/sd1.5-lcm.axera_greg/models/time_input_img2img.npy
+Environment=OUTPUT_DIR=/home/gregm/sd1.5-lcm.axera_greg/pi_axera_sd_service/output
+Environment=HOST=0.0.0.0
+Environment=PORT=5000
+
+[Install]
+WantedBy=multi-user.target
