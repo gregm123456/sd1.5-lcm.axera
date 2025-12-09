@@ -342,6 +342,15 @@ def sdapi_txt2img():
         # Generate image using existing function
         pil_image, text_time, total_time = generate_txt2img(prompt)
 
+        # Save image to OUTPUT_DIR for diagnostics
+        filename = f"gen_{int(time.time() * 1000)}.png"
+        save_path = os.path.join(OUTPUT_DIR, filename)
+        try:
+            pil_image.save(save_path)
+        except Exception:
+            # if saving fails, continue and still return base64
+            save_path = None
+
         # Encode to base64
         buffer = BytesIO()
         pil_image.save(buffer, format="PNG")
@@ -389,6 +398,15 @@ def sdapi_img2img():
 
         # Generate image using existing function
         pil_image, text_time, total_time = generate_img2img(prompt, init_image)
+
+        # Save image to OUTPUT_DIR for diagnostics
+        filename = f"gen_{int(time.time() * 1000)}.png"
+        save_path = os.path.join(OUTPUT_DIR, filename)
+        try:
+            pil_image.save(save_path)
+        except Exception:
+            # if saving fails, continue and still return base64
+            save_path = None
 
         # Encode to base64
         buffer = BytesIO()
