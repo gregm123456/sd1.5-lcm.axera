@@ -176,3 +176,21 @@ lcm-lora-sdv1-5/
 # Local test response files
 resp.json
 img_resp.json
+
+# Realistic Vision work folder components
+model_realisticvision/hugging_face/
+model_realisticvision/axmodels/
+model_realisticvision/datasets/
+model_realisticvision/5.1/
+
+# Local/Broken symlinks or recursive folders
+model_convert/configs/configs
+model_convert/tokenizer/tokenizer
+model_realisticvision/configs
+model_realisticvision/tokenizer
+
+# External docs
+pulsar2-docs/
+
+# Generated images
+*.png

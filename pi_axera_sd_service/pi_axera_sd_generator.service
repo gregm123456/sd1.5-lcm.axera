@@ -11,9 +11,10 @@ Restart=on-failure
 Environment=VIRTUAL_ENV=/home/gregm/sd1.5-lcm.axera_greg/.venv
 Environment=PATH=/home/gregm/sd1.5-lcm.axera_greg/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=TEXT_MODEL_DIR=/home/gregm/sd1.5-lcm.axera_greg/models/
-Environment=UNET_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/unet.axmodel
-Environment=VAE_DECODER_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/vae_decoder.axmodel
-Environment=VAE_ENCODER_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/vae_encoder.axmodel
+Environment=TEXT_ENCODER_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/rv_optimized/sd15_text_encoder_sim.axmodel
+Environment=UNET_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/rv_optimized/unet.axmodel
+Environment=VAE_DECODER_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/rv_optimized/vae_decoder.axmodel
+Environment=VAE_ENCODER_MODEL=/home/gregm/sd1.5-lcm.axera_greg/models/rv_optimized/vae_encoder.axmodel
 Environment=TIME_INPUT_TXT2IMG=/home/gregm/sd1.5-lcm.axera_greg/models/time_input_txt2img.npy
 Environment=TIME_INPUT_IMG2IMG=/home/gregm/sd1.5-lcm.axera_greg/models/time_input_img2img.npy
 Environment=OUTPUT_DIR=/home/gregm/sd1.5-lcm.axera_greg/pi_axera_sd_service/output

@@ -125,14 +125,14 @@ if __name__ == '__main__':
         for i, timestep in enumerate(timesteps):
             print(i, timestep)
             noise_pred = unet_session_main.run(None,
-                                               {"sample": latent,
-                                                "/down_blocks.0/resnets.0/act_1/Mul_output_0": np.expand_dims(time_input[i], axis=0),
-                                                "encoder_hidden_states": prompt_embeds_npy})[0]
+                                               {"sample": latent.astype(np.float32),
+                                                "/down_blocks.0/resnets.0/act_1/Mul_output_0": np.expand_dims(time_input[i], axis=0).astype(np.float32),
+                                                "encoder_hidden_states": prompt_embeds_npy.astype(np.float32)})[0]
 
             calib_data = {}
-            calib_data["sample"] = latent
-            calib_data["/down_blocks.0/resnets.0/act_1/Mul_output_0"] = np.expand_dims(time_input[i], axis=0)
-            calib_data["encoder_hidden_states"] = prompt_embeds_npy
+            calib_data["sample"] = latent.astype(np.float32)
+            calib_data["/down_blocks.0/resnets.0/act_1/Mul_output_0"] = np.expand_dims(time_input[i], axis=0).astype(np.float32)
+            calib_data["encoder_hidden_states"] = prompt_embeds_npy.astype(np.float32)
             np.save(f"datasets/calib_data_unet/data_{p}_{i}.npy", calib_data)
             calib_tarfile_unet.add(f"datasets/calib_data_unet/data_{p}_{i}.npy")
 

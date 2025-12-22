@@ -27,6 +27,7 @@ def extract_by_hand(input_model):
         if (
             node.name.startswith("/time_proj")
             or node.name.startswith("/time_embedding")
+            or "t" in node.input
             or node.name
             in [
                 "/down_blocks.0/resnets.0/act_1/Sigmoid",
@@ -63,7 +64,7 @@ def extract_unet(args):
     unet_feat_w = vae_encoder_img_w // 8
 
     pipe = AutoPipelineForText2Image.from_pretrained(
-        input_path, torch_dtype=torch.float32, variant="fp16"
+        input_path, torch_dtype=torch.float32
     )
     pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
     # load and fuse lcm lora
@@ -71,6 +72,13 @@ def extract_unet(args):
         str(pathlib.Path(input_lora_path) / "pytorch_lora_weights.safetensors")
     )
     pipe.fuse_lora()
+
+    # Memory optimization: delete unused components
+    del pipe.text_encoder
+    del pipe.vae
+    import gc
+    gc.collect()
+
     """
         extract unet
     """
@@ -97,21 +105,31 @@ def extract_unet(args):
             unet_path.mkdir()
 
         unet_onnx_save_path = str(unet_path / "unet.onnx")
-        torch.onnx.export(
-            UNETWrapper(pipe.unet),
-            tuple(example_input.values()),
-            unet_onnx_save_path,
-            opset_version=17,
-            do_constant_folding=True,
-            verbose=False,
-            input_names=list(example_input.keys()),
-        )
-        unet = onnx.load(unet_onnx_save_path)
-        unet_sim, check = onnxsim.simplify(unet)
-        assert check, "Simplified ONNX model could not be validated"
+        with torch.no_grad():
+            torch.onnx.export(
+                UNETWrapper(pipe.unet),
+                tuple(example_input.values()),
+                unet_onnx_save_path,
+                opset_version=18,
+                do_constant_folding=True,
+                verbose=False,
+                input_names=list(example_input.keys()),
+            )
+        # unet = onnx.load(unet_onnx_save_path)
+        # unet_sim, check = onnxsim.simplify(unet)
+        # assert check, "Simplified ONNX model could not be validated"
 
+        # extract_by_hand(unet_sim.graph)
+        # # onnx.checker.check_model(unet_sim)
+        # onnx.save(
+        #     unet_sim,
+        #     unet_onnx_save_path,
+        #     save_as_external_data=True,
+        # )
+        
+        # For now, just use the raw exported model if sim fails
+        unet_sim = onnx.load(unet_onnx_save_path)
         extract_by_hand(unet_sim.graph)
-        # onnx.checker.check_model(unet_sim)
         onnx.save(
             unet_sim,
             unet_onnx_save_path,
@@ -177,7 +195,7 @@ def extract_vae(args):
     vae_decoder_img_w = vae_encoder_img_w // 8
 
     vae = AutoencoderKL.from_pretrained(
-        str(pathlib.Path(input_path) / "vae"), torch_dtype=torch.float32, variant="fp16"
+        str(pathlib.Path(input_path) / "vae"), torch_dtype=torch.float32
     )
     vae.eval()
 
@@ -201,7 +219,7 @@ def extract_vae(args):
         vae_decoder_wrapper,
         dummy_input,
         vae_decoder_save_path,
-        opset_version=17,
+        opset_version=18,
         do_constant_folding=True,
         verbose=False,
         input_names=["x"],
@@ -234,7 +252,7 @@ def extract_vae(args):
         vae_encoder_wrapper,
         dummy_input,
         vae_encoder_save_path,
-        opset_version=17,
+        opset_version=18,
         verbose=False,
         do_constant_folding=True,
         input_names=["image_sample"],
@@ -253,7 +271,7 @@ def extract_text_encoder(args):
     max_length = 77
 
     text_encoder = CLIPTextModel.from_pretrained(
-        str(pathlib.Path(input_path) / "text_encoder"), torch_dtype=torch.float32, variant="fp16"
+        str(pathlib.Path(input_path) / "text_encoder"), torch_dtype=torch.float32
     )
 
     text_encoder.eval()
@@ -265,7 +283,7 @@ def extract_text_encoder(args):
         text_encoder.text_model,
         dummy_input,
         text_encoder_save_path,
-        opset_version=17,
+        opset_version=18,
         do_constant_folding=True,
         verbose=False,
         input_names=["input_ids"],
@@ -314,6 +332,9 @@ if __name__ == "__main__":
     parser.add_argument("--output_path", help="output path", required=True)
     parser.add_argument("--img2img", action="store_true", help="Deprecated: support image-to-image mode")
     parser.add_argument("--isize", default="512x512", help="vae encoder input image size")
+    parser.add_argument("--only_unet", action="store_true", help="only extract unet")
+    parser.add_argument("--only_vae", action="store_true", help="only extract vae")
+    parser.add_argument("--only_text", action="store_true", help="only extract text encoder")
 
     args = parser.parse_args()
 
@@ -321,7 +342,14 @@ if __name__ == "__main__":
 
     logger.info("Start the model transformation ...")
 
-    extract_text_encoder(args)
-    extract_unet(args)
-    extract_vae(args)
+    if args.only_text:
+        extract_text_encoder(args)
+    elif args.only_unet:
+        extract_unet(args)
+    elif args.only_vae:
+        extract_vae(args)
+    else:
+        extract_text_encoder(args)
+        extract_unet(args)
+        extract_vae(args)
 
