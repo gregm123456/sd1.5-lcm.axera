@@ -8,6 +8,7 @@ import os
 import time
 import threading
 import base64
+import random
 from io import BytesIO
 from flask import Flask, request, jsonify
 
@@ -131,8 +132,13 @@ def encode_image_to_latent(image: Image.Image):
     return latent.numpy()
 
 
-def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS):
+def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS, seed: int = None):
     prompt = maybe_convert_prompt(prompt, tokenizer)
+
+    # Setup generator if seed provided
+    generator = None
+    if seed is not None:
+        generator = torch.Generator().manual_seed(seed)
 
     start_total = time.time()
 
@@ -144,7 +150,7 @@ def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS):
 
     # initial latent
     latents_shape = [1, 4, 64, 64]
-    latent = torch.randn(latents_shape, generator=None, device="cpu", dtype=torch.float32,
+    latent = torch.randn(latents_shape, generator=generator, device="cpu", dtype=torch.float32,
                          layout=torch.strided).detach().numpy()
 
     # unet loop
@@ -175,7 +181,7 @@ def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS):
         denoised = c_out * predicted_original_sample + c_skip * sample
 
         if i != len(timesteps) - 1:
-            noise = torch.randn(model_output.shape, generator=None, device="cpu", dtype=torch.float32,
+            noise = torch.randn(model_output.shape, generator=generator, device="cpu", dtype=torch.float32,
                                 layout=torch.strided).to("cpu").detach().numpy()
             prev_sample = (alpha_prod_t_prev ** 0.5) * denoised + (beta_prod_t_prev ** 0.5) * noise
         else:
@@ -198,11 +204,16 @@ def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS):
     return pil_image, text_time, total_time
 
 
-def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray = None):
+def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray = None, seed: int = None):
     # Use only two steps for img2img, matching the script
     if timesteps is None:
         timesteps = np.array([499, 259]).astype(np.int64)
     prompt = maybe_convert_prompt(prompt, tokenizer)
+
+    # Setup generator if seed provided
+    generator = None
+    if seed is not None:
+        generator = torch.Generator().manual_seed(seed)
 
     start_total = time.time()
 
@@ -219,7 +230,7 @@ def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray
     timestep = timesteps[0]
     alpha_prod_t = alphas_cumprod[timestep]
     beta_prod_t = 1 - alpha_prod_t
-    noise = torch.randn(latent.shape, generator=None, device="cpu", dtype=torch.float32,
+    noise = torch.randn(latent.shape, generator=generator, device="cpu", dtype=torch.float32,
                         layout=torch.strided).detach().numpy()
     latent = (alpha_prod_t ** 0.5) * latent + (beta_prod_t ** 0.5) * noise
 
@@ -251,7 +262,7 @@ def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray
         denoised = c_out * predicted_original_sample + c_skip * sample
 
         if i != len(timesteps) - 1:
-            noise = torch.randn(model_output.shape, generator=None, device="cpu", dtype=torch.float32,
+            noise = torch.randn(model_output.shape, generator=generator, device="cpu", dtype=torch.float32,
                                 layout=torch.strided).to("cpu").detach().numpy()
             prev_sample = (alpha_prod_t_prev ** 0.5) * denoised + (beta_prod_t_prev ** 0.5) * noise
         else:
@@ -286,6 +297,16 @@ def generate_route():
         if not prompt:
             return jsonify({"error": "missing 'prompt' field"}), 400
 
+        # Handle seed
+        seed = data.get("seed")
+        if seed is None or seed == -1:
+            seed = random.randint(0, 2**32 - 1)
+        else:
+            try:
+                seed = int(seed)
+            except ValueError:
+                return jsonify({"error": "invalid 'seed' field (must be an integer)"}), 400
+
         init_image = None
         if mode == "img2img":
             init_image_b64 = data.get("init_image")
@@ -302,9 +323,9 @@ def generate_route():
 
         # Generate image
         if mode == "txt2img":
-            pil_image, text_time, total_time = generate_txt2img(prompt)
+            pil_image, text_time, total_time = generate_txt2img(prompt, seed=seed)
         else:
-            pil_image, text_time, total_time = generate_img2img(prompt, init_image)
+            pil_image, text_time, total_time = generate_img2img(prompt, init_image, seed=seed)
 
         # Save image to OUTPUT_DIR for diagnostics
         filename = f"gen_{int(time.time() * 1000)}.png"
@@ -325,6 +346,7 @@ def generate_route():
             "base64": img_base64,
             "text_time_ms": text_time,
             "total_time_ms": total_time,
+            "seed": seed,
         }
         if save_path:
             resp["path"] = save_path
@@ -343,8 +365,18 @@ def sdapi_txt2img():
         if not prompt:
             return jsonify({"error": "missing 'prompt' field"}), 400
 
+        # Handle seed
+        seed = data.get("seed")
+        if seed is None or seed == -1:
+            seed = random.randint(0, 2**32 - 1)
+        else:
+            try:
+                seed = int(seed)
+            except ValueError:
+                return jsonify({"error": "invalid 'seed' field (must be an integer)"}), 400
+
         # Generate image using existing function
-        pil_image, text_time, total_time = generate_txt2img(prompt)
+        pil_image, text_time, total_time = generate_txt2img(prompt, seed=seed)
 
         # Save image to OUTPUT_DIR for diagnostics
         filename = f"gen_{int(time.time() * 1000)}.png"
@@ -368,6 +400,7 @@ def sdapi_txt2img():
                 "steps": 4,  # Fixed for LCM
                 "width": 512,
                 "height": 512,
+                "seed": seed,
             },
             "info": f"Generated in {total_time:.2f}ms"
         }
@@ -389,6 +422,16 @@ def sdapi_img2img():
         if not init_images:
             return jsonify({"error": "missing 'init_images' field"}), 400
 
+        # Handle seed
+        seed = data.get("seed")
+        if seed is None or seed == -1:
+            seed = random.randint(0, 2**32 - 1)
+        else:
+            try:
+                seed = int(seed)
+            except ValueError:
+                return jsonify({"error": "invalid 'seed' field (must be an integer)"}), 400
+
         # Decode base64 image
         init_image_b64 = init_images[0]
         try:
@@ -401,7 +444,7 @@ def sdapi_img2img():
             return jsonify({"error": f"invalid base64 image: {str(e)}"}), 400
 
         # Generate image using existing function
-        pil_image, text_time, total_time = generate_img2img(prompt, init_image)
+        pil_image, text_time, total_time = generate_img2img(prompt, init_image, seed=seed)
 
         # Save image to OUTPUT_DIR for diagnostics
         filename = f"gen_{int(time.time() * 1000)}.png"
@@ -426,6 +469,7 @@ def sdapi_img2img():
                 "steps": 4,  # Fixed for LCM
                 "width": 512,
                 "height": 512,
+                "seed": seed,
             },
             "info": f"Generated in {total_time:.2f}ms"
         }

@@ -21,7 +21,8 @@ Generate an image using Stable Diffusion.
 ```json
 {
   "mode": "txt2img",
-  "prompt": "A photograph of a red fox in the snow, highly detailed"
+  "prompt": "A photograph of a red fox in the snow, highly detailed",
+  "seed": 1234567890
 }
 ```
 
@@ -43,7 +44,8 @@ Success:
   "status": "ok",
   "base64": "<base64 PNG>",
   "text_time_ms": 123.45,
-  "total_time_ms": 456.78
+  "total_time_ms": 456.78,
+  "seed": 1234567890
 }
 ```
 
@@ -112,5 +114,5 @@ We conducted extensive load testing to determine the optimal configuration for t
 ## Limitations & Robustness
 
 - Output is always **512x512** pixels and uses **4 inference steps** (hardware/model limitation), regardless of input parameters.
-- No support for seed, cfg_scale, or other advanced parameters (not supported by hardware acceleration)
-- **Robust parameter handling:** Any unsupported, extra, or out-of-range parameters (such as seed, sampler, cfg_scale, n_iter, batch_size, or non-512 dimensions/steps) are silently ignored. The service always attempts to yield a valid image, erring on the side of successful generation rather than erroring out.
+- No support for cfg_scale or other advanced parameters (not supported by hardware acceleration)
+- **Robust parameter handling:** Any unsupported, extra, or out-of-range parameters (such as sampler, cfg_scale, n_iter, batch_size, or non-512 dimensions/steps) are silently ignored. The service always attempts to yield a valid image, erring on the side of successful generation rather than erroring out.
