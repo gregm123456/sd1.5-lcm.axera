@@ -24,6 +24,7 @@ This document details all supported parameters for the `/generate` endpoint, wit
 | Parameter      | Type    | Required | Description                                      |
 |---------------|---------|----------|--------------------------------------------------|
 | init_image    | base64  | yes      | Base64-encoded PNG/JPEG (512x512 recommended)    |
+| resize_mode   | int     | no       | 0=Stretch (def), 1=Crop, 2=Pad                   |
 
 
 ### Not Supported (Robustly Ignored or Fixed by Hardware)

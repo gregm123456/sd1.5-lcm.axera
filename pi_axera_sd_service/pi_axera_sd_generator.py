@@ -9,6 +9,7 @@ import time
 import threading
 import base64
 import random
+import sys
 from io import BytesIO
 from flask import Flask, request, jsonify
 
@@ -130,6 +131,45 @@ def encode_image_to_latent(image: Image.Image):
     
     latent = latent * 0.18215  # Scale latent
     return latent.numpy()
+
+
+def preprocess_image(image: Image.Image, resize_mode: int) -> Image.Image:
+    """
+    Resize image to 512x512 based on resize_mode.
+    0: Just resize (stretch)
+    1: Crop and resize (cover)
+    2: Resize and fill (contain)
+    """
+    target_w, target_h = 512, 512
+    
+    if resize_mode == 0:  # Just resize
+        return image.resize((target_w, target_h), Image.LANCZOS)
+    
+    elif resize_mode == 1:  # Crop and resize
+        w, h = image.size
+        ratio = max(target_w / w, target_h / h)
+        new_w, new_h = int(w * ratio), int(h * ratio)
+        image = image.resize((new_w, new_h), Image.LANCZOS)
+        
+        # Center crop
+        left = (new_w - target_w) // 2
+        top = (new_h - target_h) // 2
+        return image.crop((left, top, left + target_w, top + target_h))
+        
+    elif resize_mode == 2:  # Resize and fill
+        w, h = image.size
+        ratio = min(target_w / w, target_h / h)
+        new_w, new_h = int(w * ratio), int(h * ratio)
+        image = image.resize((new_w, new_h), Image.LANCZOS)
+        
+        # Create black background and paste
+        new_img = Image.new("RGB", (target_w, target_h), (0, 0, 0))
+        left = (target_w - new_w) // 2
+        top = (target_h - new_h) // 2
+        new_img.paste(image, (left, top))
+        return new_img
+        
+    return image.resize((target_w, target_h), Image.LANCZOS)  # Fallback
 
 
 def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS, seed: int = None):
@@ -312,12 +352,21 @@ def generate_route():
             init_image_b64 = data.get("init_image")
             if not init_image_b64:
                 return jsonify({"error": "missing 'init_image' field for img2img mode"}), 400
+            
+            # Handle resize_mode
+            resize_mode = data.get("resize_mode", 0)
+            try:
+                resize_mode = int(resize_mode)
+                if resize_mode not in [0, 1, 2]:
+                    resize_mode = 0
+            except ValueError:
+                resize_mode = 0
+
             try:
                 init_image_data = base64.b64decode(init_image_b64)
                 init_image = Image.open(BytesIO(init_image_data)).convert("RGB")
-                # Resize to 512x512 if needed
-                if init_image.size != (512, 512):
-                    init_image = init_image.resize((512, 512), Image.LANCZOS)
+                # Preprocess image
+                init_image = preprocess_image(init_image, resize_mode)
             except Exception as e:
                 return jsonify({"error": f"invalid base64 image: {str(e)}"}), 400
 
@@ -432,14 +481,22 @@ def sdapi_img2img():
             except ValueError:
                 return jsonify({"error": "invalid 'seed' field (must be an integer)"}), 400
 
+        # Handle resize_mode
+        resize_mode = data.get("resize_mode", 0)
+        try:
+            resize_mode = int(resize_mode)
+            if resize_mode not in [0, 1, 2]:
+                resize_mode = 0
+        except ValueError:
+            resize_mode = 0
+
         # Decode base64 image
         init_image_b64 = init_images[0]
         try:
             init_image_data = base64.b64decode(init_image_b64)
             init_image = Image.open(BytesIO(init_image_data)).convert("RGB")
-            # Resize to 512x512 if needed
-            if init_image.size != (512, 512):
-                init_image = init_image.resize((512, 512), Image.LANCZOS)
+            # Preprocess image
+            init_image = preprocess_image(init_image, resize_mode)
         except Exception as e:
             return jsonify({"error": f"invalid base64 image: {str(e)}"}), 400
 

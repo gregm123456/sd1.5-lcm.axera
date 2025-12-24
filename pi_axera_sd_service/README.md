@@ -32,7 +32,8 @@ For img2img:
 {
   "mode": "img2img",
   "prompt": "Make this image look like a pencil sketch",
-  "init_image": "<base64 PNG>"
+  "init_image": "<base64 PNG>",
+  "resize_mode": 1
 }
 ```
 
