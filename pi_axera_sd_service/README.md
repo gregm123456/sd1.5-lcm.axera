@@ -99,6 +99,16 @@ curl -X POST http://localhost:5000/generate \
 - Works with picker client (`sd_client.py`)
 - Optimized for Raspberry Pi with Axera AX650N
 
+## Performance & Scalability
+
+We conducted extensive load testing to determine the optimal configuration for the AX650N hardware. The results and scripts are available in the [parallel_experiment/](parallel_experiment/) directory.
+
+**Key Takeaways:**
+1.  **Single Instance is Optimal:** Running a single service instance provides the best balance of latency (~3s/image) and throughput.
+2.  **Hardware Limits:** The hardware supports a maximum of **3 concurrent instances**. Attempting to run 4 causes driver failures.
+3.  **Diminishing Returns:** Running multiple instances in parallel **does not improve total throughput** (capped at ~0.38 images/sec) but **significantly degrades latency** (increasing from 3s to ~8s per image).
+4.  **Recommendation:** Stick to running one instance of the service on port 5000.
+
 ## Limitations & Robustness
 
 - Output is always **512x512** pixels and uses **4 inference steps** (hardware/model limitation), regardless of input parameters.
