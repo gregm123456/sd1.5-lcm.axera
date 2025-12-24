@@ -14,10 +14,11 @@ This document details all supported parameters for the `/generate` endpoint, wit
 | seed          | int     | no       | Seed for deterministic generation (random if omitted) |
 
 ### img2img Only
-| Parameter      | Type    | Required | Description                                      |
-|---------------|---------|----------|--------------------------------------------------|
-| init_image    | base64  | yes      | Base64-encoded PNG/JPEG (512x512 recommended)    |
-| resize_mode   | int     | no       | 0=Stretch (def), 1=Crop, 2=Pad                   |
+| Parameter          | Type    | Required | Description                                          |
+|-------------------|---------|----------|------------------------------------------------------|
+| init_image        | base64  | yes      | Base64-encoded PNG/JPEG (512x512 recommended)        |
+| denoising_strength| float   | no       | 0.0-1.0. Controls modification level (def: 0.5)      |
+| resize_mode       | int     | no       | 0=Stretch (def), 1=Crop, 2=Pad                       |
 
 ---
 
@@ -29,7 +30,10 @@ The following parameters are accepted for API compatibility (e.g., with SD WebUI
 |---------------|---------|-------|--------------------------------------------------|
 | width         | int     | 512   | UNet/VAE models are compiled for 512x512         |
 | height        | int     | 512   | UNet/VAE models are compiled for 512x512         |
-| steps         | int     | 4     | LCM-LoRA is optimized for 4-step inference       |
+| steps (txt2img)| int     | 4     | LCM-LoRA is optimized for 4-step inference       |
+
+> **Note on Steps:**
+> While `txt2img` is fixed at 4 steps, `img2img` uses a subset of these steps (1-4) based on the `denoising_strength` provided. Passing a custom `steps` parameter is still ignored; the step count is derived solely from the strength.
 
 ---
 
@@ -91,9 +95,9 @@ curl -sS -X POST http://127.0.0.1:5000/generate \
     "mode": "img2img",
     "prompt": "Make this a pencil sketch, high contrast",
     "init_image": "'${B64}'",
+    "denoising_strength": 0.75,
     "width": 512,
-    "height": 512,
-    "steps": 4
+    "height": 512
   }'
 ```
 
@@ -108,6 +112,7 @@ Success:
   "base64": "<base64 PNG>",
   "text_time_ms": 123.45,
   "total_time_ms": 456.78,
+  "seed": 1234567890,
   "path": "pi_axera_sd_service/output/gen_1700000000000.png"
 }
 ```
@@ -123,11 +128,24 @@ Error:
 ---
 
 ## Tips
-- Output is always **512x512** resolution and **4 steps** (hardware limitation), regardless of input.
+- Output is always **512x512** resolution (hardware limitation).
+- **Steps:** `txt2img` always uses 4 steps. `img2img` uses 1-4 steps depending on `denoising_strength`.
 - Extra, unknown, or out-of-range fields are robustly ignored.
 - For img2img, always provide a base64-encoded PNG or JPEG (512x512 recommended).
 - The `path` field in the response shows where the PNG was saved on the server (for diagnostics).
 - All images are also returned as base64 PNG in the response.
+
+---
+
+## Denoising Strength Mapping (img2img)
+The service maps the float `denoising_strength` to discrete hardware-supported steps:
+
+| Range | Steps | Description |
+|-------|-------|-------------|
+| 0.00 - 0.35 | 1 | Minimal changes, very fast |
+| 0.36 - 0.60 | 2 | Balanced (Default) |
+| 0.61 - 0.85 | 3 | Strong modification |
+| 0.86 - 1.00 | 4 | Complete reimagining |
 
 ---
 

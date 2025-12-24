@@ -76,7 +76,6 @@ UNET_MODEL = os.environ.get("UNET_MODEL", "./models/unet.axmodel")
 VAE_DECODER_MODEL = os.environ.get("VAE_DECODER_MODEL", "./models/vae_decoder.axmodel")
 VAE_ENCODER_MODEL = os.environ.get("VAE_ENCODER_MODEL", "./models/vae_encoder.axmodel")
 TIME_INPUT_TXT2IMG = os.environ.get("TIME_INPUT_TXT2IMG", "./models/time_input_txt2img.npy")
-TIME_INPUT_IMG2IMG = os.environ.get("TIME_INPUT_IMG2IMG", "./models/time_input_img2img.npy")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "./txt2img_server_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -88,7 +87,6 @@ unet_session_main = axengine.InferenceSession(UNET_MODEL)
 vae_decoder = axengine.InferenceSession(VAE_DECODER_MODEL)
 vae_encoder = axengine.InferenceSession(VAE_ENCODER_MODEL)
 time_input_txt2img = np.load(TIME_INPUT_TXT2IMG)
-time_input_img2img = np.load(TIME_INPUT_IMG2IMG)
 alphas_cumprod, final_alphas_cumprod, self_timesteps = get_alphas_cumprod()
 
 # Locks to avoid concurrent runs overlapping (safer for runtimes that are not thread-safe)
@@ -244,10 +242,21 @@ def generate_txt2img(prompt: str, timesteps: np.ndarray = DEFAULT_TIMESTEPS, see
     return pil_image, text_time, total_time
 
 
-def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray = None, seed: int = None):
-    # Use only two steps for img2img, matching the script
-    if timesteps is None:
-        timesteps = np.array([499, 259]).astype(np.int64)
+def generate_img2img(prompt: str, init_image: Image.Image, strength: float = 0.5, seed: int = None):
+    # Mapping logic (Pinning)
+    if strength <= 0.35:
+        start_index = 3  # 1 step (259)
+    elif strength <= 0.60:
+        start_index = 2  # 2 steps (499, 259)
+    elif strength <= 0.85:
+        start_index = 1  # 3 steps (759, 499, 259)
+    else:
+        start_index = 0  # 4 steps (999, 759, 499, 259)
+    
+    timesteps = DEFAULT_TIMESTEPS[start_index:]
+    # Use time_input_txt2img as the master source
+    time_input = time_input_txt2img[start_index:]
+    
     prompt = maybe_convert_prompt(prompt, tokenizer)
 
     # Setup generator if seed provided
@@ -266,7 +275,7 @@ def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray
     # encode init image to latent
     latent = encode_image_to_latent(init_image)
 
-    # Add noise for img2img (using the first timestep)
+    # Add noise for img2img (using the first timestep of the slice)
     timestep = timesteps[0]
     alpha_prod_t = alphas_cumprod[timestep]
     beta_prod_t = 1 - alpha_prod_t
@@ -278,7 +287,7 @@ def generate_img2img(prompt: str, init_image: Image.Image, timesteps: np.ndarray
     for i, timestep in enumerate(timesteps):
         with unet_lock:
             noise_pred = unet_session_main.run(None, {"sample": latent.astype(np.float32),
-                                                     "/down_blocks.0/resnets.0/act_1/Mul_output_0": np.expand_dims(time_input_img2img[i], axis=0),
+                                                     "/down_blocks.0/resnets.0/act_1/Mul_output_0": np.expand_dims(time_input[i], axis=0),
                                                      "encoder_hidden_states": prompt_embeds_npy})[0]
 
         sample = latent
@@ -348,11 +357,19 @@ def generate_route():
                 return jsonify({"error": "invalid 'seed' field (must be an integer)"}), 400
 
         init_image = None
+        strength = 0.5
         if mode == "img2img":
             init_image_b64 = data.get("init_image")
             if not init_image_b64:
                 return jsonify({"error": "missing 'init_image' field for img2img mode"}), 400
             
+            # Handle denoising_strength
+            strength = data.get("denoising_strength", data.get("strength", 0.5))
+            try:
+                strength = float(strength)
+            except ValueError:
+                strength = 0.5
+
             # Handle resize_mode
             resize_mode = data.get("resize_mode", 0)
             try:
@@ -374,7 +391,7 @@ def generate_route():
         if mode == "txt2img":
             pil_image, text_time, total_time = generate_txt2img(prompt, seed=seed)
         else:
-            pil_image, text_time, total_time = generate_img2img(prompt, init_image, seed=seed)
+            pil_image, text_time, total_time = generate_img2img(prompt, init_image, strength=strength, seed=seed)
 
         # Save image to OUTPUT_DIR for diagnostics
         filename = f"gen_{int(time.time() * 1000)}.png"
@@ -490,6 +507,13 @@ def sdapi_img2img():
         except ValueError:
             resize_mode = 0
 
+        # Handle denoising_strength
+        strength = data.get("denoising_strength", 0.5)
+        try:
+            strength = float(strength)
+        except ValueError:
+            strength = 0.5
+
         # Decode base64 image
         init_image_b64 = init_images[0]
         try:
@@ -501,7 +525,7 @@ def sdapi_img2img():
             return jsonify({"error": f"invalid base64 image: {str(e)}"}), 400
 
         # Generate image using existing function
-        pil_image, text_time, total_time = generate_img2img(prompt, init_image, seed=seed)
+        pil_image, text_time, total_time = generate_img2img(prompt, init_image, strength=strength, seed=seed)
 
         # Save image to OUTPUT_DIR for diagnostics
         filename = f"gen_{int(time.time() * 1000)}.png"
@@ -523,6 +547,7 @@ def sdapi_img2img():
             "parameters": {
                 "prompt": prompt,
                 "init_images": init_images,
+                "denoising_strength": strength,
                 "steps": 4,  # Fixed for LCM
                 "width": 512,
                 "height": 512,
