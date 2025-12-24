@@ -13,21 +13,27 @@ This document details all supported parameters for the `/generate` endpoint, wit
 | prompt        | string  | yes      | Text prompt for image generation                 |
 | seed          | int     | no       | Seed for deterministic generation (random if omitted) |
 
-### txt2img Only
-| Parameter      | Type    | Required | Description                                      |
-|---------------|---------|----------|--------------------------------------------------|
-| width         | int     | no       | Image width (default: 512, fixed)                |
-| height        | int     | no       | Image height (default: 512, fixed)               |
-| steps         | int     | no       | Inference steps (default: 4, fixed by hardware)  |
-
 ### img2img Only
 | Parameter      | Type    | Required | Description                                      |
 |---------------|---------|----------|--------------------------------------------------|
 | init_image    | base64  | yes      | Base64-encoded PNG/JPEG (512x512 recommended)    |
 | resize_mode   | int     | no       | 0=Stretch (def), 1=Crop, 2=Pad                   |
 
+---
 
-### Not Supported (Robustly Ignored or Fixed by Hardware)
+## Fixed Parameters (Hardware Locked)
+
+The following parameters are accepted for API compatibility (e.g., with SD WebUI clients) but are **fixed by the compiled hardware models**. Any values passed for these will be ignored.
+
+| Parameter      | Type    | Value | Reason                                           |
+|---------------|---------|-------|--------------------------------------------------|
+| width         | int     | 512   | UNet/VAE models are compiled for 512x512         |
+| height        | int     | 512   | UNet/VAE models are compiled for 512x512         |
+| steps         | int     | 4     | LCM-LoRA is optimized for 4-step inference       |
+
+---
+
+## Not Supported (Robustly Ignored)
 - negative_prompt
 - sampler_name
 - cfg_scale
@@ -51,7 +57,7 @@ curl -sS -X POST http://127.0.0.1:5000/generate \
   -d '{"mode":"txt2img","prompt":"A red fox in the snow, highly detailed"}'
 ```
 
-**With all supported fields:**
+**With optional fields (including fixed hardware parameters):**
 ```bash
 curl -sS -X POST http://127.0.0.1:5000/generate \
   -H "Content-Type: application/json" \
@@ -76,7 +82,7 @@ curl -sS -X POST http://127.0.0.1:5000/generate \
   -d '{"mode":"img2img","prompt":"Make this a pencil sketch","init_image":"'${B64}'"}'
 ```
 
-**With all supported fields:**
+**With optional fields (including fixed hardware parameters):**
 ```bash
 B64="<base64-encoded-512x512-png>"
 curl -sS -X POST http://127.0.0.1:5000/generate \
