@@ -114,5 +114,6 @@ We conducted extensive load testing to determine the optimal configuration for t
 ## Limitations & Robustness
 
 - Output is always **512x512** pixels and uses **4 inference steps** (hardware/model limitation), regardless of input parameters.
+- **No Negative Prompt / CFG Support:** The service runs at effective CFG=1.0 (no guidance) for maximum speed with LCM-LoRA. Negative prompts are ignored because the unconditional pass required for Classifier-Free Guidance is skipped to double inference throughput.
 - No support for cfg_scale or other advanced parameters (not supported by hardware acceleration)
 - **Robust parameter handling:** Any unsupported, extra, or out-of-range parameters (such as sampler, cfg_scale, n_iter, batch_size, or non-512 dimensions/steps) are silently ignored. The service always attempts to yield a valid image, erring on the side of successful generation rather than erroring out.

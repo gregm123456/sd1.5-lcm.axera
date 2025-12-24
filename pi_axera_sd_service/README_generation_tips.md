@@ -11,6 +11,7 @@ This document details all supported parameters for the `/generate` endpoint, wit
 |---------------|---------|----------|--------------------------------------------------|
 | mode          | string  | yes      | "txt2img" or "img2img"                           |
 | prompt        | string  | yes      | Text prompt for image generation                 |
+| seed          | int     | no       | Seed for deterministic generation (random if omitted) |
 
 ### txt2img Only
 | Parameter      | Type    | Required | Description                                      |
@@ -26,11 +27,14 @@ This document details all supported parameters for the `/generate` endpoint, wit
 
 
 ### Not Supported (Robustly Ignored or Fixed by Hardware)
-- seed
+- negative_prompt
 - sampler_name
 - cfg_scale
 - n_iter
 - batch_size
+
+> **Note on Negative Prompts:**
+> Negative prompts are not supported because the service uses LCM-LoRA without Classifier-Free Guidance (CFG). Enabling CFG would require running the model twice per step (conditional + unconditional), effectively halving the performance. To maintain real-time speeds on the embedded hardware, the unconditional pass is skipped.
 
 > **Note:**
 > This implementation is designed for specialized hardware and robustly ignores any unsupported, extra, or out-of-range parameters. **The output will always be 512x512 pixels and use 4 inference steps, regardless of input.** The service always attempts to yield an image if possible, rather than returning an error for unknown or unhandled fields. This ensures maximum compatibility with clients that may send a superset of parameters.
