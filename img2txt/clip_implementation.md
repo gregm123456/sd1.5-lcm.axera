@@ -7,9 +7,9 @@ We use `openai/clip-vit-base-patch32`. While it requires a new Text Encoder (512
 
 ---
 
-## Phase 1: Export to ONNX (Raspberry Pi or Local PC)
+## Phase 1: Export to ONNX (Raspberry Pi or Local PC) [COMPLETED]
 
-### 1. Create Export Script
+### 1. Create Export Script (Done)
 Create `img2txt/export_clip_base.py`:
 ```python
 import torch
@@ -17,7 +17,7 @@ from transformers import CLIPModel, CLIPProcessor
 import os
 
 model_id = "openai/clip-vit-base-patch32"
-os.makedirs("onnx-models", exist_ok=True)
+os.makedirs("img2txt/onnx-models", exist_ok=True)
 
 print(f"Loading {model_id}...")
 model = CLIPModel.from_pretrained(model_id)
@@ -27,7 +27,7 @@ dummy_vision_input = torch.randn(1, 3, 224, 224)
 torch.onnx.export(
     model.vision_model,
     dummy_vision_input,
-    "onnx-models/clip_base_vision.onnx",
+    "img2txt/onnx-models/clip_base_vision.onnx",
     input_names=["pixel_values"],
     output_names=["image_embeds"],
     dynamic_axes={"pixel_values": {0: "batch_size"}},
@@ -39,16 +39,16 @@ dummy_text_input = torch.ones(1, 77, dtype=torch.long)
 torch.onnx.export(
     model.text_model,
     dummy_text_input,
-    "onnx-models/clip_base_text.onnx",
+    "img2txt/onnx-models/clip_base_text.onnx",
     input_names=["input_ids"],
     output_names=["text_embeds"],
     dynamic_axes={"input_ids": {0: "batch_size"}},
     opset_version=17
 )
-print("Done! Saved Vision and Text models to onnx-models/")
+print("Done! Saved Vision and Text models to img2txt/onnx-models/")
 ```
 
-### 2. Generate Calibration Data
+### 2. Generate Calibration Data (Done)
 Create `img2txt/prepare_clip_calib.py`:
 ```python
 import numpy as np
@@ -58,8 +58,10 @@ from PIL import Image
 from transformers import CLIPProcessor
 
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-calib_dir = "datasets/clip_calib"
+calib_dir = "img2txt/datasets/clip_calib"
+text_calib_dir = "img2txt/datasets/text_calib"
 os.makedirs(calib_dir, exist_ok=True)
+os.makedirs(text_calib_dir, exist_ok=True)
 
 # Use assets for calibration
 image_paths = [os.path.join("assets", f) for f in os.listdir("assets") if f.endswith(('.png', '.jpg'))][:50]
@@ -70,8 +72,85 @@ for i, path in enumerate(image_paths):
     pixel_values = inputs['pixel_values'].astype(np.float32)
     np.save(os.path.join(calib_dir, f"input_{i}.npy"), pixel_values)
 
-with tarfile.open("datasets/clip_calib.tar", "w") as tar:
+# Generate dummy text calibration (77 tokens, vocab size 49408)
+for i in range(50):
+    text_input = np.random.randint(0, 49408, (1, 77)).astype(np.int32)
+    np.save(os.path.join(text_calib_dir, f"input_{i}.npy"), text_input)
+
+with tarfile.open("img2txt/datasets/clip_calib.tar", "w") as tar:
     tar.add(calib_dir, arcname=".")
+
+with tarfile.open("img2txt/datasets/text_calib.tar", "w") as tar:
+    tar.add(text_calib_dir, arcname=".")
+```
+
+### 3. Create Pulsar2 Config Files (Done)
+Create `img2txt/configs/clip_vision_u16.json`:
+```json
+{
+    "model_type": "ONNX",
+    "npu_mode": "NPU3",
+    "quant": {
+      "input_configs": [
+        {
+          "tensor_name": "pixel_values",
+          "calibration_dataset": "./datasets/clip_calib.tar",
+          "calibration_size": 50,
+          "calibration_format": "Numpy"
+        }
+      ],
+      "calibration_method": "MinMax",
+      "precision_analysis": false,
+      "conv_bias_data_type": "FP32",
+      "layer_configs": [
+        {
+          "start_tensor_names": ["DEFAULT"],
+          "end_tensor_names": ["DEFAULT"],
+          "data_type": "U16"
+        }
+      ]
+    },
+    "compiler": {
+      "npu_perf": false
+    }
+}
+```
+
+Create `img2txt/configs/text_encoder_u16.json`:
+```json
+{
+    "model_type": "ONNX",
+    "npu_mode": "NPU3",
+    "quant": {
+      "input_configs": [
+        {
+          "tensor_name": "input_ids",
+          "calibration_dataset": "./datasets/text_calib.tar",
+          "calibration_size": 50,
+          "calibration_format": "Numpy"
+        }
+      ],
+      "calibration_method": "MinMax",
+      "precision_analysis": false,
+      "conv_bias_data_type": "FP32",
+      "layer_configs": [
+        {
+          "start_tensor_names": ["DEFAULT"],
+          "end_tensor_names": ["DEFAULT"],
+          "data_type": "U16"
+        }
+      ]
+    },
+    "input_processors": [
+      {
+        "tensor_name": "input_ids",
+        "src_dtype": "I32"
+      }
+    ],
+    "compiler": {
+      "npu_perf": false
+    }
+}
 ```
 
 ---
@@ -80,21 +159,33 @@ with tarfile.open("datasets/clip_calib.tar", "w") as tar:
 
 ### 1. Transfer Files
 ```bash
-scp onnx-models/clip_base_*.onnx gregm2@192.168.4.130:~/pulsar_build/img2txt/
-scp datasets/clip_calib.tar gregm2@192.168.4.130:~/pulsar_build/img2txt/
+# Create directory structure on Mac
+ssh gregm2@192.168.4.130 "mkdir -p ~/pulsar_build/img2txt/{onnx-models,datasets,configs,axmodels}"
+
+# Transfer ONNX models
+scp img2txt/onnx-models/clip_base_*.onnx* gregm2@192.168.4.130:~/pulsar_build/img2txt/onnx-models/
+
+# Transfer calibration data
+scp img2txt/datasets/*.tar gregm2@192.168.4.130:~/pulsar_build/img2txt/datasets/
+
+# Transfer config files
+scp img2txt/configs/*.json gregm2@192.168.4.130:~/pulsar_build/img2txt/configs/
 ```
 
 ### 2. Run Build (Fast)
+On the Mac, navigate to the img2txt directory and run:
 ```bash
-# Vision (INT8)
+cd ~/pulsar_build/img2txt
+
+# Vision Encoder (U16 quantization)
 docker run --rm -v "$(pwd)":/data -w /data pulsar2:5.1 \
-    pulsar2 build --input clip_base_vision.onnx \
+    pulsar2 build --input onnx-models/clip_base_vision.onnx \
     --output_dir axmodels --output_name clip_base_vision.axmodel \
     --config configs/clip_vision_u16.json
 
-# Text (INT8 or FP16)
+# Text Encoder (U16 quantization)
 docker run --rm -v "$(pwd)":/data -w /data pulsar2:5.1 \
-    pulsar2 build --input clip_base_text.onnx \
+    pulsar2 build --input onnx-models/clip_base_text.onnx \
     --output_dir axmodels --output_name clip_base_text.axmodel \
     --config configs/text_encoder_u16.json
 ```

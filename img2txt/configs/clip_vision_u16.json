@@ -1,0 +1,27 @@
+{
+    "model_type": "ONNX",
+    "npu_mode": "NPU3",
+    "quant": {
+      "input_configs": [
+        {
+          "tensor_name": "pixel_values",
+          "calibration_dataset": "./datasets/clip_calib.tar",
+          "calibration_size": 50,
+          "calibration_format": "Numpy"
+        }
+      ],
+      "calibration_method": "MinMax",
+      "precision_analysis": false,
+      "conv_bias_data_type": "FP32",
+      "layer_configs": [
+        {
+          "start_tensor_names": ["DEFAULT"],
+          "end_tensor_names": ["DEFAULT"],
+          "data_type": "U16"
+        }
+      ]
+    },
+    "compiler": {
+      "npu_perf": false
+    }
+}

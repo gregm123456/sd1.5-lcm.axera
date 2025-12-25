@@ -17,6 +17,7 @@ txt2img_server_output
 *.onnx
 *.axmodel
 *.npy
+*.tar
 7ffcf62c-d292-11ef-bb2a-9d527016cd35
 # C extensions
 *.so
@@ -182,6 +183,10 @@ model_realisticvision/hugging_face/
 model_realisticvision/axmodels/
 model_realisticvision/datasets/
 model_realisticvision/5.1/
+
+# CLIP Interrogator work folder components
+img2txt/datasets/
+img2txt/onnx-models/
 
 # Local/Broken symlinks or recursive folders
 model_convert/configs/configs
