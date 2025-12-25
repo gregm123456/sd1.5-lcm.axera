@@ -158,9 +158,9 @@ Create `img2txt/configs/text_encoder_u16.json`:
 
 ---
 
-## Phase 2: Compilation (Intel Mac)
+## Phase 2: Compilation (Intel Mac) [COMPLETED]
 
-### 1. Transfer Files
+### 1. Transfer Files (Done)
 ```bash
 # Create directory structure on Mac
 ssh gregm2@192.168.4.130 "mkdir -p ~/pulsar_build/img2txt/{onnx-models,datasets,configs,axmodels}"
@@ -175,7 +175,7 @@ scp img2txt/datasets/*.tar gregm2@192.168.4.130:~/pulsar_build/img2txt/datasets/
 scp img2txt/configs/*.json gregm2@192.168.4.130:~/pulsar_build/img2txt/configs/
 ```
 
-### 2. Run Build (Fast)
+### 2. Run Build (Fast) (Done)
 On the Mac, navigate to the img2txt directory and run:
 ```bash
 cd ~/pulsar_build/img2txt
@@ -193,7 +193,7 @@ docker run --rm -v "$(pwd)":/data -w /data pulsar2:5.1 \
     --config configs/text_encoder_u16.json
 ```
 
-### 3. Transfer Models Back to Raspberry Pi
+### 3. Transfer Models Back to Raspberry Pi (Done)
 Run this from your **Mac**:
 ```bash
 scp axmodels/clip_base_*.axmodel gregm@192.168.4.121:/home/gregm/sd1.5-lcm.axera_greg/models/
