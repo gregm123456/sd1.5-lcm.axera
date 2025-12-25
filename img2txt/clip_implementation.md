@@ -99,6 +99,12 @@ docker run --rm -v "$(pwd)":/data -w /data pulsar2:5.1 \
     --config configs/text_encoder_u16.json
 ```
 
+### 3. Transfer Models Back to Raspberry Pi
+Run this from your **Mac**:
+```bash
+scp axmodels/clip_base_*.axmodel gregm@192.168.4.121:/home/gregm/sd1.5-lcm.axera_greg/models/
+```
+
 ---
 
 ## Phase 3: Inference Wrapper (Raspberry Pi)
