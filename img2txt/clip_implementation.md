@@ -20,31 +20,33 @@ model_id = "openai/clip-vit-base-patch32"
 os.makedirs("img2txt/onnx-models", exist_ok=True)
 
 print(f"Loading {model_id}...")
-model = CLIPModel.from_pretrained(model_id)
+# Use eager attention and safetensors to avoid export/security issues
+model = CLIPModel.from_pretrained(model_id, use_safetensors=True, attn_implementation="eager")
+model.eval()
 
 # 1. Export Vision Encoder
 dummy_vision_input = torch.randn(1, 3, 224, 224)
-torch.onnx.export(
-    model.vision_model,
-    dummy_vision_input,
-    "img2txt/onnx-models/clip_base_vision.onnx",
-    input_names=["pixel_values"],
-    output_names=["image_embeds"],
-    dynamic_axes={"pixel_values": {0: "batch_size"}},
-    opset_version=17
-)
+with torch.no_grad():
+    torch.onnx.export(
+        model.vision_model,
+        dummy_vision_input,
+        "img2txt/onnx-models/clip_base_vision.onnx",
+        input_names=["pixel_values"],
+        output_names=["image_embeds"],
+        opset_version=14 # Opset 14 is more stable for Axera toolchain
+    )
 
 # 2. Export Text Encoder
 dummy_text_input = torch.ones(1, 77, dtype=torch.long)
-torch.onnx.export(
-    model.text_model,
-    dummy_text_input,
-    "img2txt/onnx-models/clip_base_text.onnx",
-    input_names=["input_ids"],
-    output_names=["text_embeds"],
-    dynamic_axes={"input_ids": {0: "batch_size"}},
-    opset_version=17
-)
+with torch.no_grad():
+    torch.onnx.export(
+        model.text_model,
+        dummy_text_input,
+        "img2txt/onnx-models/clip_base_text.onnx",
+        input_names=["input_ids"],
+        output_names=["text_embeds"],
+        opset_version=14
+    )
 print("Done! Saved Vision and Text models to img2txt/onnx-models/")
 ```
 
@@ -73,8 +75,9 @@ for i, path in enumerate(image_paths):
     np.save(os.path.join(calib_dir, f"input_{i}.npy"), pixel_values)
 
 # Generate dummy text calibration (77 tokens, vocab size 49408)
+# Use int64 to match the ONNX model's expected input type
 for i in range(50):
-    text_input = np.random.randint(0, 49408, (1, 77)).astype(np.int32)
+    text_input = np.random.randint(0, 49408, (1, 77)).astype(np.int64)
     np.save(os.path.join(text_calib_dir, f"input_{i}.npy"), text_input)
 
 with tarfile.open("img2txt/datasets/clip_calib.tar", "w") as tar:
@@ -144,7 +147,7 @@ Create `img2txt/configs/text_encoder_u16.json`:
     "input_processors": [
       {
         "tensor_name": "input_ids",
-        "src_dtype": "I32"
+        "src_dtype": "S32"
       }
     ],
     "compiler": {
@@ -299,8 +302,12 @@ Since the NPU memory is shared, ensure `clip_interrogator` uses the same `axengi
 
 ---
 
-## Lessons Learned from SD1.5 Conversion
-1. **Float Precision**: Ensure calibration `.npy` files are explicitly `float32`.
-2. **Input Names**: The ONNX export must use `pixel_values` as the input name to match standard CLIP processors.
-3. **Opset**: Use `opset_version=17` or higher for Transformer compatibility.
-4. **NPU Locking**: Use the existing `unet_lock` or a new `vision_lock` to prevent concurrent NPU access if multiple requests arrive.
+## Lessons Learned from CLIP Conversion
+1. **Static Batch Size**: The Axera compiler (Pulsar2) does not support dynamic axes (e.g., `s99`). Models must be exported with a fixed batch size (usually 1).
+2. **Opset Version**: Use `opset_version=14`. Higher versions (like 17) can introduce operators (like `ScaledDotProductAttention`) that the compiler or ONNX export process may struggle with in certain PyTorch versions.
+3. **Attention Implementation**: Use `attn_implementation="eager"` when loading models from Transformers to avoid issues with the newer `sdpa` (Scaled Dot Product Attention) during ONNX export.
+4. **Data Types**: 
+    - Ensure calibration `.npy` files for images are explicitly `float32`.
+    - For Text Encoders, calibration data should be `int64` to match the model's input, but the Pulsar2 config `src_dtype` should be `S32` (signed 32-bit) for the NPU processor.
+5. **Security/Safetensors**: Use `use_safetensors=True` to bypass security restrictions in newer PyTorch/Transformers versions when loading weights.
+6. **NPU Locking**: Use the existing `unet_lock` or a new `vision_lock` to prevent concurrent NPU access if multiple requests arrive.

@@ -24,7 +24,7 @@
     "input_processors": [
       {
         "tensor_name": "input_ids",
-        "src_dtype": "I32"
+        "src_dtype": "S32"
       }
     ],
     "compiler": {

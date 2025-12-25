@@ -21,7 +21,7 @@ for i, path in enumerate(image_paths):
 
 # Generate dummy text calibration (77 tokens)
 for i in range(50):
-    text_input = np.random.randint(0, 49408, (1, 77)).astype(np.int32)
+    text_input = np.random.randint(0, 49408, (1, 77)).astype(np.int64)
     np.save(os.path.join(text_calib_dir, f"input_{i}.npy"), text_input)
 
 with tarfile.open("img2txt/datasets/clip_calib.tar", "w") as tar:
