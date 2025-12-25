@@ -201,34 +201,58 @@ scp axmodels/clip_base_*.axmodel gregm@192.168.4.121:/home/gregm/sd1.5-lcm.axera
 
 ---
 
-## Phase 3: Inference Wrapper (Raspberry Pi)
+## Phase 3: Inference Wrapper (Raspberry Pi) [COMPLETED]
 
-Update `img2txt/clip_interrogate.py`:
+Update `img2txt/clip_interrogate.py` (Done):
 ```python
 import axengine
 import numpy as np
+import os
 from PIL import Image
-from transformers import CLIPProcessor, CLIPTokenizer
+from transformers import CLIPProcessor, CLIPTokenizer, CLIPModel
 
-VISION_MODEL = "../models/clip_base_vision.axmodel"
-TEXT_MODEL = "../models/clip_base_text.axmodel"
+# Get the directory of the current script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+VISION_MODEL = os.path.join(SCRIPT_DIR, "../models/clip_base_vision.axmodel")
+TEXT_MODEL = os.path.join(SCRIPT_DIR, "../models/clip_base_text.axmodel")
 TOKENIZER_DIR = "openai/clip-vit-base-patch32" # Use standard HF tokenizer
 
 class CLIPInterrogator:
     def __init__(self):
         self.vision_session = axengine.InferenceSession(VISION_MODEL)
         self.text_session = axengine.InferenceSession(TEXT_MODEL)
+        
+        # Load CLIP Model for projections and tokenizer
+        self.model = CLIPModel.from_pretrained(TOKENIZER_DIR)
         self.processor = CLIPProcessor.from_pretrained(TOKENIZER_DIR)
         self.tokenizer = CLIPTokenizer.from_pretrained(TOKENIZER_DIR)
+        
+        # Extract projection weights for CPU application (since they weren't in the ONNX export)
+        self.visual_projection = self.model.visual_projection.weight.detach().numpy().T
+        self.text_projection = self.model.text_projection.weight.detach().numpy().T
 
     def interrogate(self, image, labels):
         # 1. Image Pass
         inputs = self.processor(images=image, return_tensors="np")
-        img_emb = self.vision_session.run(None, {"pixel_values": inputs['pixel_values'].astype(np.float32)})[0]
+        # The model returns [last_hidden_state, pooler_output]
+        v_out = self.vision_session.run(None, {"pixel_values": inputs['pixel_values'].astype(np.float32)})
+        img_emb_raw = v_out[1] # Shape (1, 768)
         
-        # 2. Text Pass (Can be cached!)
-        text_inputs = self.tokenizer(labels, padding="max_length", max_length=77, truncation=True, return_tensors="np")
-        text_embs = self.text_session.run(None, {"input_ids": text_inputs['input_ids'].astype(np.int32)})[0]
+        # Apply visual projection
+        img_emb = img_emb_raw @ self.visual_projection # Shape (1, 512)
+        
+        # 2. Text Pass (Loop because model is static batch size 1)
+        text_embs = []
+        for label in labels:
+            text_inputs = self.tokenizer(label, padding="max_length", max_length=77, truncation=True, return_tensors="np")
+            t_out = self.text_session.run(None, {"input_ids": text_inputs['input_ids'].astype(np.int32)})
+            t_emb_raw = t_out[1] # Shape (1, 512)
+            
+            # Apply text projection
+            t_emb = t_emb_raw @ self.text_projection # Shape (1, 512)
+            text_embs.append(t_emb)
+        
+        text_embs = np.concatenate(text_embs, axis=0)
         
         # 3. Similarity (CPU)
         img_emb /= np.linalg.norm(img_emb, axis=-1, keepdims=True)
@@ -236,14 +260,8 @@ class CLIPInterrogator:
         return img_emb @ text_embs.T
 ```
 
-# Example Usage
-if __name__ == "__main__":
-    ci = CLIPInterrogator()
-    img = Image.open("../assets/sample.png")
-    labels = ["a photo of a cat", "a photo of a dog", "a landscape"]
-    scores = ci.interrogate(img, labels)
-    print(f"Top Label: {labels[np.argmax(scores)]}")
-```
+### 2. Standalone Interrogation Script (Done)
+Create `img2txt/run_clip_interrogate.py` to provide a command-line interface for tagging images using a curated list of tags.
 
 ---
 
