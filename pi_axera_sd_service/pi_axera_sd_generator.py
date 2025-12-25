@@ -197,6 +197,62 @@ class CLIPInterrogator:
         scores = img_emb @ text_embs_norm.T
         return scores, current_labels
 
+    def _softmax(self, x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum()
+
+    def classify_categories(self, image, schema):
+        # 1. Get image embedding
+        inputs = self.processor(images=image, return_tensors="np")
+        v_out = self.vision_session.run(None, {"pixel_values": inputs['pixel_values'].astype(np.float32)})
+        img_emb_raw = v_out[1]
+        img_emb = img_emb_raw @ self.visual_projection
+        img_emb /= np.linalg.norm(img_emb, axis=-1, keepdims=True)
+
+        results = {}
+        
+        # Create a mapping for fast lookup if we have cached labels
+        label_to_idx = {}
+        if self.cached_labels:
+            label_to_idx = {label: i for i, label in enumerate(self.cached_labels)}
+
+        for category, labels in schema.items():
+            cat_embs = []
+            valid_labels = []
+            
+            for label in labels:
+                if label in label_to_idx:
+                    cat_embs.append(self.cached_embeddings[label_to_idx[label]])
+                    valid_labels.append(label)
+                else:
+                    # On-the-fly encoding for missing labels
+                    templated_label = f"a photo of a {label}"
+                    text_inputs = self.tokenizer(templated_label, padding="max_length", max_length=77, truncation=True, return_tensors="np")
+                    t_out = self.text_session.run(None, {"input_ids": text_inputs['input_ids'].astype(np.int32)})
+                    t_emb_raw = t_out[1]
+                    t_emb = t_emb_raw @ self.text_projection
+                    t_emb_norm = t_emb / np.linalg.norm(t_emb, axis=-1, keepdims=True)
+                    cat_embs.append(t_emb_norm.flatten())
+                    valid_labels.append(label)
+            
+            if not cat_embs:
+                continue
+                
+            cat_embs = np.stack(cat_embs)
+            # Similarity
+            scores = (img_emb @ cat_embs.T).flatten()
+            
+            # Softmax with temperature scaling (CLIP standard is 100.0)
+            probs = self._softmax(scores * 100.0)
+            
+            winner_idx = np.argmax(probs)
+            results[category] = {
+                "winner": valid_labels[winner_idx],
+                "confidence": float(probs[winner_idx])
+            }
+            
+        return results, img_emb
+
 
 app = Flask(__name__)
 
@@ -771,6 +827,51 @@ def sdapi_interrogate():
         return jsonify({
             "caption": caption,
             "interrogations": [{"tag": r[0], "score": float(r[1])} for r in results]
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/sdapi/v1/interrogate/structured", methods=["POST"])
+def sdapi_interrogate_structured():
+    if clip_interrogator is None:
+        return jsonify({"error": "CLIP Interrogator is not initialized"}), 501
+
+    try:
+        data = request.get_json(force=True)
+        image_b64 = data.get("image")
+        categories = data.get("categories")
+        
+        if not image_b64:
+            return jsonify({"error": "missing 'image' field"}), 400
+        if not categories or not isinstance(categories, dict):
+            return jsonify({"error": "missing or invalid 'categories' field (must be a dictionary)"}), 400
+
+        # Decode base64 image
+        try:
+            image_data = base64.b64decode(image_b64)
+            image = Image.open(BytesIO(image_data)).convert("RGB")
+        except Exception as e:
+            return jsonify({"error": f"invalid base64 image: {str(e)}"}), 400
+
+        # Interrogate
+        with clip_lock:
+            results, img_emb = clip_interrogator.classify_categories(image, categories)
+            
+            # Also get general tags if we have cached embeddings
+            general_tags = []
+            if clip_interrogator.cached_embeddings is not None:
+                scores = (img_emb @ clip_interrogator.cached_embeddings.T).flatten()
+                # Get top 10 general tags
+                top_indices = np.argsort(scores)[-10:][::-1]
+                for idx in top_indices:
+                    if scores[idx] > 0.2: # Minimum threshold for general tags
+                        general_tags.append(clip_interrogator.cached_labels[idx])
+
+        return jsonify({
+            "results": results,
+            "general_tags": general_tags
         })
 
     except Exception as e:

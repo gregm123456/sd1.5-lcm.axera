@@ -5,9 +5,10 @@ This service provides a unified REST API endpoint for generating images using St
 ## Features
 
 - **Unified Endpoint**: Single `/generate` endpoint supporting both txt2img and img2img modes
+- **Structured Interrogation**: New `/sdapi/v1/interrogate/structured` endpoint for categorized classification (e.g., Demographics)
 - **Base64 Response**: Images returned as base64-encoded PNG for direct client consumption
 - **Hardware Optimized**: Tailored for Axera AX650N with LCM-LoRA acceleration
-- **Thread-Safe**: Concurrent request handling with proper locking
+- **Large Taxonomy**: Built-in support for 20,101 ImageNet-21K labels with RAM caching
 - **Systemd Integration**: Runs as a system service with automatic restart
 
 ## API
@@ -56,6 +57,54 @@ Error:
 {
   "status": "error",
   "error": "description of error"
+}
+```
+
+### POST /sdapi/v1/interrogate
+
+Standard flat interrogation (Top-K tags).
+
+#### Request Body (JSON)
+```json
+{
+  "image": "<base64 PNG>"
+}
+```
+
+#### Response
+```json
+{
+  "caption": "woman, portrait, long hair",
+  "interrogations": [
+    {"tag": "woman", "score": 0.28},
+    {"tag": "portrait", "score": 0.25}
+  ]
+}
+```
+
+### POST /sdapi/v1/interrogate/structured
+
+Categorized classification using Softmax normalization. Ideal for "Form Filling" (Demographics, Settings, etc.).
+
+#### Request Body (JSON)
+```json
+{
+  "image": "<base64 PNG>",
+  "categories": {
+    "gender": ["man", "woman", "boy", "girl"],
+    "hair_color": ["pink", "blonde", "brown", "black"]
+  }
+}
+```
+
+#### Response
+```json
+{
+  "results": {
+    "gender": {"winner": "woman", "confidence": 0.94},
+    "hair_color": {"winner": "pink", "confidence": 0.99}
+  },
+  "general_tags": ["portrait", "face", "long hair"]
 }
 ```
 

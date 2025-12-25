@@ -4,11 +4,15 @@ This document analyzes the feasibility of implementing image-to-text (captioning
 
 ## 1. Current Status of the Workspace
 
-The existing models and code are strictly optimized for **Stable Diffusion 1.5 Image Generation**.
+**STATUS: IMPLEMENTED**
 
-*   **Available Components**: CLIP Text Encoder (`sd15_text_encoder_sim.axmodel`), UNet, and VAE.
-*   **Missing Components**: The **CLIP Vision Encoder** (the "eyes" of the model) and a **Language Model (LLM/Decoder)** head are not present in the current `.axmodel` set.
-*   **Data Flow**: The current pipeline is one-way (Text $\rightarrow$ Image). Image-to-text requires a reverse or multimodal pipeline.
+The image-to-text capability has been fully integrated into the `pi_axera_sd_service`.
+
+*   **Available Components**: 
+    *   CLIP Text Encoder (`sd15_text_encoder_sim.axmodel`)
+    *   CLIP Vision Encoder (`clip_base_vision.axmodel`) - **ADDED**
+    *   ImageNet-21K Embedding Cache (20,101 terms)
+*   **Data Flow**: Bidirectional. Supports both Image Generation (Text $\rightarrow$ Image) and Interrogation (Image $\rightarrow$ Text/Categories).
 
 ## 2. Compact Model Alternatives
 
@@ -36,8 +40,8 @@ MobileVLM V2 is an improved family of Vision-Language Models (VLMs) that builds 
     *   **NPU Optimization**: The `pulsar2 llm_build` tool is perfectly suited to handle the LDP V2 projector and the transformer layers of MobileLLaMA, allowing for full INT8 acceleration on the AX650N.
 
 ### CLIP vs. BLIP: Performance Trade-offs
-*   **CLIP (Keyword Style)**: Uses a "one-shot" approach. The image passes through the Vision Encoder once to produce an embedding, which is then compared against a pre-computed keyword database. This is near-instant on the Axera NPU.
-*   **BLIP (Caption Style)**: Uses an "autoregressive" approach. After the initial vision pass, the Text Decoder must run sequentially for every word generated. A 15-word caption requires 15+ sequential NPU passes, making it significantly slower than CLIP.
+*   **CLIP (Keyword Style)**: **IMPLEMENTED**. Uses a "one-shot" approach with a pre-computed embedding cache. This is near-instant on the Axera NPU and supports dynamic categorization via Softmax.
+*   **BLIP (Caption Style)**: Future consideration for natural language descriptions.
 
 ## 3. Axera Conversion Pathway
 
@@ -51,22 +55,14 @@ As documented in [pulsar2-docs/source/appendix/build_llm.rst](../pulsar2-docs/so
 *   `--hidden_state_type`: Supports `bf16` or `fp16` for transformer layers.
 *   `--weight_type`: Supports `int8` (s8) or `int4` (s4) quantization to fit in NPU memory.
 
-## 4. Proposed Implementation Strategy
+## 4. Implementation Strategy (COMPLETED)
 
-To implement img2txt without introducing significantly new tooling:
+The implementation follows the "CLIP (Keyword Style)" approach:
 
-1.  **Export**: Create an export script (similar to [sd15_export_onnx.py](../model_convert/sd15_export_onnx.py)) that uses `transformers.BlipForConditionalGeneration` to export the Vision Tower and Text Decoder to ONNX.
-2.  **Compile**: Use the `pulsar2 llm_build` command within the existing Pulsar2 Docker environment to generate `.axmodel` files.
-3.  **Inference**:
-    *   Use `axengine` to run the Vision Encoder on the NPU.
-    *   The resulting image embeddings are then fed into the Text Decoder (also on NPU) to generate the caption tokens.
-4.  **Integration**: Add an interrogation capability to the [pi_axera_sd_generator.py](../pi_axera_sd_service/pi_axera_sd_generator.py) service.
-
-### API Standardization Options
-To maintain compatibility with existing tools (like SillyTavern or SD mobile apps), two integration paths are available:
-
-*   **A1111 Standard**: Implement `POST /sdapi/v1/interrogate`. This expects a JSON body with `{"image": "base64...", "model": "clip"}` and returns `{"caption": "..."}`.
-*   **Native Unified Style**: Extend the existing `/generate` endpoint with a new mode: `{"mode": "interrogate", "image": "base64..."}`.
+1.  **Vision Pass**: The image is encoded once using `clip_base_vision.axmodel` on the NPU.
+2.  **Structured Slicing**: The resulting embedding is compared against specific "buckets" of pre-computed text embeddings in RAM.
+3.  **Categorized Softmax**: Probabilities are calculated within each category to provide high-confidence winners.
+4.  **Integration**: Fully integrated into [pi_axera_sd_generator.py](../pi_axera_sd_service/pi_axera_sd_generator.py).
 
 ## 5. Conclusion
-While the feature is not "plug-and-play" with the current model set, the **Pulsar2 toolchain already in the workspace** contains the necessary logic (`llm_build`) to support compact vision-language models like BLIP-Base or InternVL.
+The AX650N now supports high-speed, structured image interrogation, enabling "Form Filler" applications for demographics, scene analysis, and more.
