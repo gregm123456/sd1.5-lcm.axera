@@ -5,6 +5,8 @@ This document provides the step-by-step instructions to export, compile, and dep
 ## Overview
 We use `openai/clip-vit-base-patch32`. While it requires a new Text Encoder (512-dim), the total system footprint and latency are significantly lower than the Large version.
 
+For a detailed analysis of how this implementation supports **Constrained Output** (e.g., Demographics, Structured Data) and handles large vocabularies, see [clip_constrained_output.md](clip_constrained_output.md).
+
 ---
 
 ## Phase 1: Export to ONNX (Raspberry Pi or Local PC) [COMPLETED]

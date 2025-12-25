@@ -1,0 +1,118 @@
+{
+  "meta": {
+    "version": "1.0",
+    "description": "Sample picker text configuration: six knobs (CH0,CH1,CH2,CH4,CH5,CH6). Each values array MUST be length 12; empty strings allowed.",
+    "reserved_image_area": {
+      "width": 512,
+      "height": 512
+    }
+  },
+
+  "CH0": {
+    "title": "Sex/Gender",
+    "values": [
+      "Agender",
+      "Bigender",
+      "Cisgender",
+      "Female",
+      "Genderqueer",
+      "Intersex",
+      "Male",
+      "Non-binary",
+      "Transgender Man",
+      "Transgender Woman",
+      "Two-spirit",
+      ""
+    ]
+  },
+
+  "CH1": {
+    "title": "Age",
+    "values": [
+      "Young Adult",
+      "Adult",
+      "Middle-aged",
+      "Senior",
+      "Elderly",
+      "Retired",
+      "Mature",
+      "Midlife",
+      "Wise",
+      "Golden Years",
+      "Venerable",
+      ""
+    ]
+  },
+
+  "CH2": {
+    "title": "Socioeconomics",
+    "values": [
+      "Lower Class",
+      "Working Class",
+      "Middle Class",
+      "Underclass",
+      "Upper Class",
+      "Wealthy",
+      "Affluent",
+      "Elite",
+      "Poverty",
+      "Struggling",
+      "Comfortable",
+      ""
+    ]
+  },
+
+  "CH4": {
+    "title": "Politics",
+    "values": [
+      "Anarchist",
+      "Authoritarian",
+      "Centrist",
+      "Conservative",
+      "Left-wing",
+      "Liberal",
+      "Libertarian",
+      "Moderate",
+      "Populist",
+      "Progressive",
+      "Right-wing",
+      ""
+    ]
+  },
+
+  "CH5": {
+    "title": "Race",
+    "values": [
+      "African",
+      "Asian",
+      "Black",
+      "East Asian",
+      "Hispanic",
+      "Indigenous",
+      "Middle Eastern",
+      "Mixed Race",
+      "Pacific Islander",
+      "South Asian",
+      "White",
+      ""
+    ]
+  },
+
+  "CH6": {
+    "title": "Religion",
+    "values": [
+      "Agnostic",
+      "Atheist",
+      "Baháʼí",
+      "Buddhist",
+      "Christian",
+      "Hindu",
+      "Jain",
+      "Jewish",
+      "Muslim",
+      "Sikh",
+      "Taoist",
+      ""
+    ]
+  }
+}

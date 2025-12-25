@@ -3,13 +3,14 @@ import numpy as np
 import axengine
 import torch
 from PIL import Image
-from transformers import CLIPTokenizer, PreTrainedTokenizer
+from transformers import CLIPTokenizer, PreTrainedTokenizer, CLIPProcessor, CLIPModel
 import os
 import time
 import threading
 import base64
 import random
 import sys
+import hashlib
 from io import BytesIO
 from flask import Flask, request, jsonify
 
@@ -67,6 +68,136 @@ def get_alphas_cumprod():
     return alphas_cumprod, final_alphas_cumprod, self_timesteps
 
 
+# Curated list of tags for general image interrogation
+DEFAULT_TAGS = [
+    "man", "woman", "boy", "girl", "person", "group of people",
+    "outdoor", "indoor", "nature", "city", "landscape", "interior",
+    "day", "night", "sunset", "sunrise",
+    "highly detailed", "masterpiece", "sharp focus", "blurry",
+    "digital art", "photograph", "painting", "sketch", "anime",
+    "forest", "mountain", "beach", "ocean", "street", "building",
+    "cat", "dog", "horse", "bird", "animal",
+    "car", "bicycle", "plane", "boat",
+    "food", "drink", "fruit", "vegetable",
+    "blue sky", "cloudy", "rainy", "snowy", "sunny",
+    "red", "blue", "green", "yellow", "black", "white", "colorful"
+]
+
+
+class CLIPInterrogator:
+    def __init__(self, vision_model_path, text_model_path, cache_dir=None):
+        print(f"Loading CLIP Vision Model: {vision_model_path}")
+        self.vision_session = axengine.InferenceSession(vision_model_path)
+        print(f"Loading CLIP Text Model: {text_model_path}")
+        self.text_session = axengine.InferenceSession(text_model_path)
+        
+        tokenizer_dir = "openai/clip-vit-base-patch32"
+        print(f"Loading CLIP Model for projections and tokenizer: {tokenizer_dir}")
+        self.model = CLIPModel.from_pretrained(tokenizer_dir)
+        self.processor = CLIPProcessor.from_pretrained(tokenizer_dir)
+        self.tokenizer = CLIPTokenizer.from_pretrained(tokenizer_dir)
+        
+        # Extract projection weights for CPU application
+        self.visual_projection = self.model.visual_projection.weight.detach().numpy().T
+        self.text_projection = self.model.text_projection.weight.detach().numpy().T
+        
+        # We can delete the model to save RAM if needed
+        del self.model
+        
+        self.cached_embeddings = None
+        self.cached_labels = None
+        self.cache_dir = cache_dir
+        if self.cache_dir:
+            os.makedirs(self.cache_dir, exist_ok=True)
+
+    def precompute_text_embeddings(self, labels):
+        # Generate a hash of the labels and the template to use as a cache key
+        template = "a photo of a {}"
+        labels_str = ",".join(labels) + "|" + template
+        labels_hash = hashlib.sha256(labels_str.encode()).hexdigest()
+        cache_file = None
+        
+        if self.cache_dir:
+            cache_file = os.path.join(self.cache_dir, f"clip_cache_{labels_hash}.npy")
+            if os.path.exists(cache_file):
+                print(f"Loading cached embeddings from {cache_file}...")
+                self.cached_embeddings = np.load(cache_file)
+                self.cached_labels = labels
+                return
+
+        print(f"Pre-computing embeddings for {len(labels)} labels...")
+        text_embs = []
+        start_time = time.time()
+        
+        for i, label in enumerate(labels):
+            if i % 100 == 0 and i > 0:
+                elapsed = time.time() - start_time
+                rate = i / elapsed
+                remaining = (len(labels) - i) / rate
+                print(f"  Processed {i}/{len(labels)} labels ({rate:.1f} labels/sec, ~{remaining:.0f}s remaining)")
+            
+            # Use a template to provide context (e.g., "a photo of a dog")
+            templated_label = template.format(label)
+            text_inputs = self.tokenizer(templated_label, padding="max_length", max_length=77, truncation=True, return_tensors="np")
+            t_out = self.text_session.run(None, {"input_ids": text_inputs['input_ids'].astype(np.int32)})
+            t_emb_raw = t_out[1] # Shape (1, 512)
+            
+            # Apply text projection
+            t_emb = t_emb_raw @ self.text_projection # Shape (1, 512)
+            text_embs.append(t_emb)
+        
+        self.cached_embeddings = np.concatenate(text_embs, axis=0)
+        # Normalize
+        self.cached_embeddings /= np.linalg.norm(self.cached_embeddings, axis=-1, keepdims=True)
+        self.cached_labels = labels
+        
+        if cache_file:
+            print(f"Saving embeddings to cache: {cache_file}")
+            np.save(cache_file, self.cached_embeddings)
+            
+        print(f"Embeddings pre-computed for {len(labels)} labels in {time.time() - start_time:.2f}s.")
+
+    def interrogate(self, image, labels=None):
+        # 1. Image Pass
+        inputs = self.processor(images=image, return_tensors="np")
+        # The model returns [last_hidden_state, pooler_output]
+        # We want pooler_output (index 1)
+        v_out = self.vision_session.run(None, {"pixel_values": inputs['pixel_values'].astype(np.float32)})
+        img_emb_raw = v_out[1] # Shape (1, 768)
+        
+        # Apply visual projection
+        img_emb = img_emb_raw @ self.visual_projection # Shape (1, 512)
+        img_emb /= np.linalg.norm(img_emb, axis=-1, keepdims=True)
+        
+        # 2. Text Pass
+        if labels is None:
+            if self.cached_embeddings is None:
+                raise ValueError("No labels provided and no cached embeddings found.")
+            text_embs_norm = self.cached_embeddings
+            current_labels = self.cached_labels
+        elif labels == self.cached_labels:
+            text_embs_norm = self.cached_embeddings
+            current_labels = self.cached_labels
+        else:
+            # Fallback to on-the-fly computation for custom labels
+            text_embs = []
+            for label in labels:
+                templated_label = f"a photo of a {label}"
+                text_inputs = self.tokenizer(templated_label, padding="max_length", max_length=77, truncation=True, return_tensors="np")
+                t_out = self.text_session.run(None, {"input_ids": text_inputs['input_ids'].astype(np.int32)})
+                t_emb_raw = t_out[1]
+                t_emb = t_emb_raw @ self.text_projection
+                text_embs.append(t_emb)
+            
+            text_embs = np.concatenate(text_embs, axis=0)
+            text_embs_norm = text_embs / np.linalg.norm(text_embs, axis=-1, keepdims=True)
+            current_labels = labels
+        
+        # 3. Similarity (CPU)
+        scores = img_emb @ text_embs_norm.T
+        return scores, current_labels
+
+
 app = Flask(__name__)
 
 # Configuration (adjust paths as needed)
@@ -75,6 +206,8 @@ TEXT_ENCODER_MODEL = os.environ.get("TEXT_ENCODER_MODEL", os.path.join(TEXT_MODE
 UNET_MODEL = os.environ.get("UNET_MODEL", "./models/unet.axmodel")
 VAE_DECODER_MODEL = os.environ.get("VAE_DECODER_MODEL", "./models/vae_decoder.axmodel")
 VAE_ENCODER_MODEL = os.environ.get("VAE_ENCODER_MODEL", "./models/vae_encoder.axmodel")
+CLIP_VISION_MODEL = os.environ.get("CLIP_VISION_MODEL", os.path.join(TEXT_MODEL_DIR, "clip_base_vision.axmodel"))
+CLIP_TEXT_MODEL = os.environ.get("CLIP_TEXT_MODEL", os.path.join(TEXT_MODEL_DIR, "clip_base_text.axmodel"))
 TIME_INPUT_TXT2IMG = os.environ.get("TIME_INPUT_TXT2IMG", "./models/time_input_txt2img.npy")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "./txt2img_server_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -86,6 +219,35 @@ text_encoder = axengine.InferenceSession(TEXT_ENCODER_MODEL)
 unet_session_main = axengine.InferenceSession(UNET_MODEL)
 vae_decoder = axengine.InferenceSession(VAE_DECODER_MODEL)
 vae_encoder = axengine.InferenceSession(VAE_ENCODER_MODEL)
+
+# Initialize CLIP Interrogator
+clip_interrogator = None
+interrogate_tags = DEFAULT_TAGS
+
+# Try to load custom tags
+TAGS_FILE = os.environ.get("INTERROGATE_TAGS_FILE", "pi_axera_sd_service/imagenet_21k_labels_clean.txt")
+if os.path.exists(TAGS_FILE):
+    print(f"Loading interrogation tags from {TAGS_FILE}...")
+    try:
+        with open(TAGS_FILE, "r") as f:
+            loaded_tags = [line.strip() for line in f if line.strip()]
+        if loaded_tags:
+            interrogate_tags = loaded_tags
+            print(f"Loaded {len(interrogate_tags)} tags.")
+    except Exception as e:
+        print(f"Error loading tags file: {e}")
+
+if os.path.exists(CLIP_VISION_MODEL) and os.path.exists(CLIP_TEXT_MODEL):
+    try:
+        cache_dir = os.path.join(TEXT_MODEL_DIR, "clip_cache")
+        clip_interrogator = CLIPInterrogator(CLIP_VISION_MODEL, CLIP_TEXT_MODEL, cache_dir=cache_dir)
+        # Pre-compute embeddings for the tags
+        clip_interrogator.precompute_text_embeddings(interrogate_tags)
+    except Exception as e:
+        print(f"Failed to load CLIP Interrogator: {e}")
+else:
+    print("CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.")
+
 time_input_txt2img = np.load(TIME_INPUT_TXT2IMG)
 alphas_cumprod, final_alphas_cumprod, self_timesteps = get_alphas_cumprod()
 
@@ -93,6 +255,7 @@ alphas_cumprod, final_alphas_cumprod, self_timesteps = get_alphas_cumprod()
 text_lock = threading.Lock()
 unet_lock = threading.Lock()
 vae_lock = threading.Lock()
+clip_lock = threading.Lock()
 
 # fixed timesteps used in the original example
 DEFAULT_TIMESTEPS = np.array([999, 759, 499, 259]).astype(np.int64)
@@ -556,6 +719,59 @@ def sdapi_img2img():
             "info": f"Generated in {total_time:.2f}ms"
         }
         return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/sdapi/v1/interrogate", methods=["POST"])
+def sdapi_interrogate():
+    if clip_interrogator is None:
+        return jsonify({"error": "CLIP Interrogator is not initialized (models missing?)"}), 501
+
+    try:
+        data = request.get_json(force=True)
+        image_b64 = data.get("image")
+        if not image_b64:
+            return jsonify({"error": "missing 'image' field"}), 400
+
+        # Decode base64 image
+        try:
+            image_data = base64.b64decode(image_b64)
+            image = Image.open(BytesIO(image_data)).convert("RGB")
+        except Exception as e:
+            return jsonify({"error": f"invalid base64 image: {str(e)}"}), 400
+
+        # Interrogate
+        with clip_lock:
+            # Use cached tags (None passed)
+            scores, used_tags = clip_interrogator.interrogate(image)
+            scores = scores[0]
+
+        # Filter by threshold and sort by score
+        threshold = 0.22
+        top_k = 10
+        results = []
+        for i, score in enumerate(scores):
+            if score >= threshold:
+                results.append((used_tags[i], score))
+        
+        results.sort(key=lambda x: x[1], reverse=True)
+        results = results[:top_k]
+
+        caption = ", ".join([r[0] for r in results])
+        if not caption:
+            # Fallback to top 1 if nothing above threshold
+            top_idx = np.argmax(scores)
+            top_score = float(scores[top_idx])
+            caption = used_tags[top_idx]
+            results = [(caption, top_score)]
+
+        # Return both the caption string and the detailed scores
+        return jsonify({
+            "caption": caption,
+            "interrogations": [{"tag": r[0], "score": float(r[1])} for r in results]
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
