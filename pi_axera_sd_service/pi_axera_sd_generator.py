@@ -11,6 +11,7 @@ import base64
 import random
 import sys
 import hashlib
+import json
 from io import BytesIO
 from flask import Flask, request, jsonify
 
@@ -255,6 +256,21 @@ class CLIPInterrogator:
 
 
 app = Flask(__name__)
+
+
+def log_request(endpoint, data):
+    """Log request parameters, redacting large base64 strings."""
+    safe_data = data.copy()
+    for key in ["init_image", "init_images", "image"]:
+        if key in safe_data:
+            if isinstance(safe_data[key], list):
+                safe_data[key] = [f"<base64 data, {len(str(item))} chars>" for item in safe_data[key]]
+            else:
+                safe_data[key] = f"<base64 data, {len(str(safe_data[key]))} chars>"
+    
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Request to {endpoint}:", flush=True)
+    print(json.dumps(safe_data, indent=2), flush=True)
+
 
 # Configuration (adjust paths as needed)
 TEXT_MODEL_DIR = os.environ.get("TEXT_MODEL_DIR", "./models/")
@@ -557,6 +573,7 @@ def generate_img2img(prompt: str, init_image: Image.Image, strength: float = 0.5
 def generate_route():
     try:
         data = request.get_json(force=True)
+        log_request("/generate", data)
         mode = data.get("mode")
         if not mode or mode not in ["txt2img", "img2img"]:
             return jsonify({"error": "missing or invalid 'mode' field (must be 'txt2img' or 'img2img')"}), 400
@@ -646,6 +663,7 @@ def generate_route():
 def sdapi_txt2img():
     try:
         data = request.get_json(force=True)
+        log_request("/sdapi/v1/txt2img", data)
         prompt = data.get("prompt", "")
         if not prompt:
             return jsonify({"error": "missing 'prompt' field"}), 400
@@ -699,6 +717,7 @@ def sdapi_txt2img():
 def sdapi_img2img():
     try:
         data = request.get_json(force=True)
+        log_request("/sdapi/v1/img2img", data)
         prompt = data.get("prompt", "")
         if not prompt:
             return jsonify({"error": "missing 'prompt' field"}), 400
@@ -787,6 +806,7 @@ def sdapi_interrogate():
 
     try:
         data = request.get_json(force=True)
+        log_request("/sdapi/v1/interrogate", data)
         image_b64 = data.get("image")
         if not image_b64:
             return jsonify({"error": "missing 'image' field"}), 400
@@ -840,6 +860,7 @@ def sdapi_interrogate_structured():
 
     try:
         data = request.get_json(force=True)
+        log_request("/sdapi/v1/interrogate/structured", data)
         image_b64 = data.get("image")
         categories = data.get("categories")
         

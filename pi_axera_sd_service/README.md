@@ -10,6 +10,7 @@ This service provides a unified REST API endpoint for generating images using St
 - **Hardware Optimized**: Tailored for Axera AX650N with LCM-LoRA acceleration
 - **Large Taxonomy**: Built-in support for 20,101 ImageNet-21K labels with RAM caching
 - **Systemd Integration**: Runs as a system service with automatic restart
+- **Structured Logging**: Real-time JSON logging of request parameters with base64 redaction for easy debugging
 
 ## API
 
@@ -144,6 +145,27 @@ Test img2img:
 curl -X POST http://localhost:5000/generate \
   -H "Content-Type: application/json" \
   -d '{"mode": "img2img", "prompt": "Convert to sketch", "init_image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}'
+```
+
+## Monitoring & Logs
+
+The service logs all incoming request parameters in a structured JSON format. To prevent log pollution, large base64-encoded image data is automatically redacted and replaced with a character count.
+
+To follow the logs in real-time:
+```bash
+sudo journalctl -u pi_axera_sd_generator.service -f
+```
+
+Example log output:
+```json
+[2025-12-27 09:31:08] Request to /generate:
+{
+  "mode": "img2img",
+  "prompt": "a cute cat",
+  "init_image": "<base64 data, 96 chars>",
+  "steps": 4,
+  "seed": 42
+}
 ```
 
 ## Compatibility
