@@ -1,0 +1,3 @@
+[submodule "realistic-vision-v6-axera-hw"]
+	path = realistic-vision-v6-axera-hw
+	url = https://huggingface.co/gregm123456/realistic-vision-v6-axera-hw
