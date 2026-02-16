@@ -111,40 +111,114 @@ Categorized classification using Softmax normalization. Ideal for "Form Filling"
 
 ## Installation
 
-1. Ensure all model files are in the `models/` directory
-2. Install dependencies: `pip install flask transformers torch pillow numpy axengine`
-3. Copy the service file to systemd: `sudo cp pi_axera_sd_generator.service /etc/systemd/system/`
-4. Reload systemd: `sudo systemctl daemon-reload`
-5. Enable and start: `sudo systemctl enable pi_axera_sd_generator && sudo systemctl start pi_axera_sd_generator`
+See [RASPBERRY_PI_SETUP.md](../RASPBERRY_PI_SETUP.md) in the repository root for complete, step-by-step installation instructions.
+
+Quick summary:
+
+1. **Create Python venv:**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install flask transformers torch pillow numpy axengine cffi ml-dtypes
+   ```
+
+3. **Prepare model files** in `pi_axera_sd_service/models/`:
+   - `.axmodel` files (text_encoder, unet, vae_decoder, vae_encoder) from `realistic-vision-v6-axera-hw/`
+   - `tokenizer/` directory with vocab.json, merges.txt, tokenizer_config.json, special_tokens_map.json
+   - `time_input_txt2img.npy` and `time_input_img2img.npy`
+   - `text_encoder/config.json`
+   
+   ```bash
+   # Example: copy from realistic-vision directory
+   mkdir -p pi_axera_sd_service/models/text_encoder
+   cp realistic-vision-v6-axera-hw/sd15_text_encoder_sim.axmodel pi_axera_sd_service/models/text_encoder/
+   cp realistic-vision-v6-axera-hw/{unet,vae_decoder,vae_encoder}.axmodel pi_axera_sd_service/models/
+   cp python/models/time_input_*.npy pi_axera_sd_service/models/
+   cp -r realistic-vision-v6-axera-hw/tokenizer pi_axera_sd_service/models/
+   cp python/models/text_encoder/config.json pi_axera_sd_service/models/text_encoder/
+   ```
+
+4. **Install systemd service:**
+   ```bash
+   sudo cp pi_axera_sd_generator.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable pi_axera_sd_generator
+   sudo systemctl start pi_axera_sd_generator
+   ```
 
 ## Configuration
 
-Environment variables:
+Default environment variables (set in systemd service file):
 
-- `TEXT_MODEL_DIR`: Path to text encoder and tokenizer (default: `./models/`)
-- `UNET_MODEL`: Path to UNet model (default: `./models/unet.axmodel`)
-- `VAE_DECODER_MODEL`: Path to VAE decoder (default: `./models/vae_decoder.axmodel`)
-- `VAE_ENCODER_MODEL`: Path to VAE encoder (default: `./models/vae_encoder.axmodel`)
-- `TIME_INPUT_TXT2IMG`: Path to txt2img time input (default: `./models/time_input_txt2img.npy`)
-- `TIME_INPUT_IMG2IMG`: Path to img2img time input (default: `./models/time_input_img2img.npy`)
-- `OUTPUT_DIR`: Directory for temporary outputs (default: `./txt2img_server_output`)
-- `HOST`: Server host (default: `127.0.0.1`)
-- `PORT`: Server port (default: `5000`)
+| Variable | Default | Purpose |
+|----------|---------|----------|
+| `TEXT_MODEL_DIR` | `./pi_axera_sd_service/models/` | Directory containing tokenizer and text_encoder |
+| `TEXT_ENCODER_MODEL` | `./pi_axera_sd_service/models/text_encoder/sd15_text_encoder_sim.axmodel` | Text encoder model path |
+| `UNET_MODEL` | `./pi_axera_sd_service/models/unet.axmodel` | UNet model path |
+| `VAE_DECODER_MODEL` | `./pi_axera_sd_service/models/vae_decoder.axmodel` | VAE decoder model path |
+| `VAE_ENCODER_MODEL` | `./pi_axera_sd_service/models/vae_encoder.axmodel` | VAE encoder model path |
+| `TIME_INPUT_TXT2IMG` | `./pi_axera_sd_service/models/time_input_txt2img.npy` | Time embeddings for txt2img |
+| `TIME_INPUT_IMG2IMG` | `./pi_axera_sd_service/models/time_input_img2img.npy` | Time embeddings for img2img |
+| `OUTPUT_DIR` | `./pi_axera_sd_service/output` | Directory to save generated images |
+| `HOST` | `0.0.0.0` | Server bind address (0.0.0.0 = accessible from network) |
+| `PORT` | `5000` | Server port |
 
-## Testing
+To override at runtime (manual testing), export environment variables before running the script:
 
-Test txt2img:
 ```bash
-curl -X POST http://localhost:5000/generate \
-  -H "Content-Type: application/json" \
-  -d '{"mode": "txt2img", "prompt": "A beautiful landscape"}'
+export HOST=127.0.0.1  # localhost only
+export PORT=5001       # custom port
+python pi_axera_sd_service/pi_axera_sd_generator.py
 ```
 
-Test img2img:
+To override in systemd, edit `/etc/systemd/system/pi_axera_sd_generator.service` and update the `Environment=` lines, then reload:
+
 ```bash
-curl -X POST http://localhost:5000/generate \
+sudo systemctl daemon-reload
+sudo systemctl restart pi_axera_sd_generator
+```
+
+## Testing & Usage
+
+**Wait for service to start** (~10-30 seconds for model loading):
+
+```bash
+sudo systemctl status pi_axera_sd_generator
+# Should show: Active: active (running)
+```
+
+**Test txt2img:**
+
+```bash
+curl -X POST http://127.0.0.1:5000/generate \
   -H "Content-Type: application/json" \
-  -d '{"mode": "img2img", "prompt": "Convert to sketch", "init_image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}'
+  -d '{"mode": "txt2img", "prompt": "a beautiful sunset over mountains"}'
+```
+
+**Test img2img** (requires base64-encoded PNG):
+
+```bash
+curl -X POST http://127.0.0.1:5000/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "img2img",
+    "prompt": "convert to sketch style",
+    "init_image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "denoising_strength": 0.75
+  }'
+```
+
+**Save response image:**
+
+```bash
+curl -s -X POST http://127.0.0.1:5000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "txt2img", "prompt": "test"}' | \
+  python -c "import sys, json, base64; data = json.load(sys.stdin); open('output.png', 'wb').write(base64.b64decode(data['base64']))" && echo "Saved to output.png"
 ```
 
 ## Monitoring & Logs
