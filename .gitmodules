@@ -1,3 +1,6 @@
 [submodule "realistic-vision-v6-axera-hw"]
 	path = realistic-vision-v6-axera-hw
 	url = https://huggingface.co/gregm123456/realistic-vision-v6-axera-hw
+[submodule "clip-interrogator-axera-hw"]
+	path = clip-interrogator-axera-hw
+	url = https://huggingface.co/gregm123456/clip-interrogator-axera-hw
