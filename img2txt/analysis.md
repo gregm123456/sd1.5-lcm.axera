@@ -4,13 +4,13 @@ This document analyzes the feasibility of implementing image-to-text (captioning
 
 ## 1. Current Status of the Workspace
 
-**STATUS: IMPLEMENTED**
+**STATUS: IMPLEMENTED (code) — model artifacts must be built/deployed separately**
 
-The image-to-text capability has been fully integrated into the `pi_axera_sd_service`.
+The image-to-text capability is fully integrated into the `pi_axera_sd_service` codebase (export/compile scripts, inference wrapper, and Flask endpoints all exist and work). However, the compiled `clip_base_vision.axmodel`/`clip_base_text.axmodel` files are **not committed to git** (`.gitignore` excludes `*.axmodel`/`*.onnx`) and are not automatically present on a fresh checkout or new deployment — they must be produced via the Pulsar2 build pipeline below (requires a Docker/Pulsar2 host) or copied from a prior working deployment. Without them, `pi_axera_sd_generator.py` logs `CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.` and both interrogation endpoints return `501`. See [pi_axera_sd_service README](../pi_axera_sd_service/README.md#installation) for the exact deployment path.
 
 *   **Available Components**: 
     *   CLIP Text Encoder (`sd15_text_encoder_sim.axmodel`)
-    *   CLIP Vision Encoder (`clip_base_vision.axmodel`) - **ADDED**
+    *   CLIP Vision Encoder (`clip_base_vision.axmodel`) - **ADDED** (build artifact, not in git)
     *   ImageNet-21K Embedding Cache (20,101 terms)
 *   **Data Flow**: Bidirectional. Supports both Image Generation (Text $\rightarrow$ Image) and Interrogation (Image $\rightarrow$ Text/Categories).
 

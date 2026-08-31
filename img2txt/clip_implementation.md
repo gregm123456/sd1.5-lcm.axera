@@ -7,6 +7,8 @@ We use `openai/clip-vit-base-patch32`. While it requires a new Text Encoder (512
 
 For a detailed analysis of how this implementation supports **Constrained Output** (e.g., Demographics, Structured Data) and handles large vocabularies, see [clip_constrained_output.md](clip_constrained_output.md).
 
+> **Deployment note:** The compiled `clip_base_vision.axmodel`/`clip_base_text.axmodel` outputs from Phase 2 are build artifacts and are **not committed to git** (`.gitignore` excludes `*.axmodel`/`*.onnx`). "Done"/"COMPLETED" below describes this pipeline having been run successfully at least once, not that the resulting files ship with the repo. Each new deployment (or lost/replaced host) needs the files re-copied from a prior build or rebuilt from scratch through this pipeline, then placed in `pi_axera_sd_service/models/` (see [pi_axera_sd_service README](../pi_axera_sd_service/README.md)).
+
 ---
 
 ## Phase 1: Export to ONNX (Raspberry Pi or Local PC) [COMPLETED]
@@ -331,3 +333,5 @@ Since the NPU memory is shared, ensure `clip_interrogator` uses the same `axengi
     - For Text Encoders, calibration data should be `int64` to match the model's input, but the Pulsar2 config `src_dtype` should be `S32` (signed 32-bit) for the NPU processor.
 5. **Security/Safetensors**: Use `use_safetensors=True` to bypass security restrictions in newer PyTorch/Transformers versions when loading weights.
 6. **NPU Locking**: Use the existing `unet_lock` or a new `vision_lock` to prevent concurrent NPU access if multiple requests arrive.
+7. **Runtime Hugging Face Dependency**: `clip_interrogate.py` calls `CLIPModel`/`CLIPProcessor`/`CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")` at every service startup (to get projection weights + tokenizer/processor, since those aren't part of the exported `.axmodel`s). This needs outbound internet access to `huggingface.co` and downloads ~1.2GB into `~/.cache/huggingface/hub` on first run. Without an `HF_TOKEN`, anonymous rate limits can cause a transient failure on a small file (e.g. `preprocessor_config.json`) even after the large weight files succeed — a plain restart usually resolves it since most of the cache persists.
+8. **Missing `.axmodel` Files → Silent 501, Not a Crash**: `pi_axera_sd_generator.py` checks `os.path.exists(CLIP_VISION_MODEL) and os.path.exists(CLIP_TEXT_MODEL)` at startup and simply disables the interrogation endpoints (returning `501`) if either is missing, rather than failing to start. If interrogation isn't working, check the startup log for `CLIP Interrogator models not found` before assuming a deeper bug.

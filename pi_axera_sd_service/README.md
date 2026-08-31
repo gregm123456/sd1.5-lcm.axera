@@ -131,7 +131,7 @@ Quick summary:
    - `tokenizer/` directory with vocab.json, merges.txt, tokenizer_config.json, special_tokens_map.json
    - `time_input_txt2img.npy` and `time_input_img2img.npy`
    - `text_encoder/config.json`
-   
+
    ```bash
    # Example: copy from realistic-vision directory
    mkdir -p pi_axera_sd_service/models/text_encoder
@@ -141,6 +141,10 @@ Quick summary:
    cp -r realistic-vision-v6-axera-hw/tokenizer pi_axera_sd_service/models/
    cp python/models/text_encoder/config.json pi_axera_sd_service/models/text_encoder/
    ```
+
+   **Optional — interrogation support** (`/sdapi/v1/interrogate` and `/sdapi/v1/interrogate/structured`): copy `clip_base_vision.axmodel` and `clip_base_text.axmodel` directly into `pi_axera_sd_service/models/` (not the `text_encoder/` subfolder). These are **not** built by the standard txt2img/img2img conversion pipeline and are **not committed to git** (`.gitignore` excludes `*.axmodel`/`*.onnx`); they must be produced separately via the `img2txt/` CLIP export/compile pipeline (see [img2txt/clip_implementation.md](../img2txt/clip_implementation.md)) or copied from a prior build/deployment. If either file is missing, both interrogation endpoints return `501`, and the startup log will say `CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.`
+   
+   Note: on first load (and on every restart unless cached), the interrogator also downloads `openai/clip-vit-base-patch32` (tokenizer/processor/projection weights, ~1.2GB) from Hugging Face Hub — this requires outbound internet access. Anonymous (no `HF_TOKEN`) requests are rate-limited and can intermittently fail on a small file after the large weights succeed; if this happens, simply restart the service. Setting `HF_TOKEN` reduces the odds of this.
 
 4. **Install systemd service:**
    ```bash
@@ -166,6 +170,10 @@ Default environment variables (set in systemd service file):
 | `OUTPUT_DIR` | `./pi_axera_sd_service/output` | Directory to save generated images |
 | `HOST` | `0.0.0.0` | Server bind address (0.0.0.0 = accessible from network) |
 | `PORT` | `5000` | Server port |
+| `CLIP_VISION_MODEL` | `<TEXT_MODEL_DIR>/clip_base_vision.axmodel` | CLIP vision encoder for interrogation (optional; disables `/sdapi/v1/interrogate*` if missing) |
+| `CLIP_TEXT_MODEL` | `<TEXT_MODEL_DIR>/clip_base_text.axmodel` | CLIP text encoder for interrogation (optional; disables `/sdapi/v1/interrogate*` if missing) |
+| `INTERROGATE_TAGS_FILE` | `pi_axera_sd_service/imagenet_21k_labels_clean.txt` | Tag vocabulary used for flat (non-structured) interrogation |
+| `HF_TOKEN` | (unset) | Hugging Face token, used when loading `openai/clip-vit-base-patch32` for the interrogator's tokenizer/processor/projection weights; avoids anonymous rate-limit errors |
 
 To override at runtime (manual testing), export environment variables before running the script:
 

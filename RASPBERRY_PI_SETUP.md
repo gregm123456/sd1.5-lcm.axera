@@ -108,6 +108,19 @@ ls -la pi_axera_sd_service/models/
 
 All `.axmodel` files should be present (total ~1.3 GB).
 
+### Optional: Interrogation Model Files
+
+The `/sdapi/v1/interrogate` and `/sdapi/v1/interrogate/structured` endpoints require two additional files placed directly in `pi_axera_sd_service/models/` (not inside `text_encoder/`):
+
+```
+pi_axera_sd_service/models/clip_base_vision.axmodel
+pi_axera_sd_service/models/clip_base_text.axmodel
+```
+
+These are **not** produced by the standard model conversion pipeline and are **not tracked in git** (`.gitignore` excludes `*.axmodel`). They come from a separate CLIP export/compile pipeline documented in [img2txt/clip_implementation.md](img2txt/clip_implementation.md), so you'll need to either rebuild them yourself (ONNX export → Pulsar2 compile) or copy them from a previous working deployment. Without them, the service starts and works fine for txt2img/img2img — only the interrogation endpoints return `501`.
+
+When these files are present, first startup (and any restart without a warm Hugging Face cache) also downloads `openai/clip-vit-base-patch32` (~1.2GB) from Hugging Face Hub to get the tokenizer/processor and projection weights. This requires outbound internet access; without an `HF_TOKEN` set, anonymous rate limits can occasionally cause a transient failure on a small file even after the large weights download successfully — a simple restart resolves it. See the troubleshooting section below.
+
 ## Step 5: Run the Service Manually (Testing)
 
 Before installing as a systemd service, test the service manually:
@@ -217,6 +230,14 @@ Common errors:
 - **Service restarts repeatedly**
   - Increase `RestartSec` in the systemd service file (default 100ms may be too fast)
   - Check available memory: `free -h`
+
+- **`501` from `/sdapi/v1/interrogate` or `/sdapi/v1/interrogate/structured`**
+  - The startup log will show `CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.`
+  - Verify `pi_axera_sd_service/models/clip_base_vision.axmodel` and `clip_base_text.axmodel` exist (directly in `models/`, not `models/text_encoder/`). See "Optional: Interrogation Model Files" above.
+
+- **`Failed to load CLIP Interrogator: Can't load image processor for 'openai/clip-vit-base-patch32'...`**
+  - This happens when the Hugging Face Hub download of the (small) processor config fails after the large model weights already downloaded — typically an anonymous rate-limit or transient network hiccup, often alongside a `HF_TOKEN` warning in the logs just before it.
+  - Fix: restart the service (`sudo systemctl restart pi_axera_sd_generator`) — most of the ~1.2GB is already cached locally, so only the small file needs to succeed. Setting an `HF_TOKEN` environment variable reduces the chance of this recurring.
 
 **Network connectivity:**
 
