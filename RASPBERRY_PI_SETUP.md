@@ -54,11 +54,22 @@ python -m pip install --upgrade pip
 
 ## Step 3: Install Python Dependencies
 
+All actual model inference (text encoder, UNet, VAE) runs on the AX650N NPU via `axengine`. `torch` is only used for lightweight CPU-side glue (scheduler math, latent generation, tensor/numpy conversions) — never GPU compute. Installing the default `torch` package pulls in ~2 GB of unusable NVIDIA CUDA dependencies (cublas, cudnn, nccl, triton, etc.), so install the CPU-only build instead:
+
 ```bash
-pip install flask pillow numpy transformers torch axengine cffi ml-dtypes
+pip install flask pillow numpy transformers axengine cffi ml-dtypes
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
-**Note**: `axengine` is the Python wrapper for the Axera runtime. It is available as a wheel (`axengine-0.1.3-py3-none-any.whl` in the repo root) or from PyPI. If installation fails, verify that the Axera SDK and `libax_engine.so` are installed on your system.
+**Note**: `axengine` is not published on PyPI. Install it from the wheel in the repo root:
+
+```bash
+pip install ./axengine-0.1.3-py3-none-any.whl
+```
+
+If installation fails, verify that the Axera SDK and `libax_engine.so` are installed on your system.
+
+**Note on `pip`/venv**: on Debian-based systems (PEP 668 "externally managed environment"), make sure you're using the venv's own `pip` (`.venv/bin/pip` or an activated `.venv`) rather than the system `pip` — the system `pip` will refuse to install packages outside a venv.
 
 ## Step 4: Prepare Model Files
 

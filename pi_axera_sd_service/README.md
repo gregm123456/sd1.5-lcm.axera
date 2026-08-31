@@ -123,8 +123,10 @@ Quick summary:
 
 2. **Install dependencies:**
    ```bash
-   pip install flask transformers torch pillow numpy axengine cffi ml-dtypes
+   pip install flask transformers pillow numpy axengine cffi ml-dtypes
+   pip install torch --index-url https://download.pytorch.org/whl/cpu
    ```
+   (`torch` only does lightweight CPU-side glue here — all model inference runs on the NPU via `axengine` — so the CPU-only wheel avoids ~2 GB of unusable NVIDIA CUDA downloads. `axengine` is installed from the wheel in the repo root, not PyPI.)
 
 3. **Prepare model files** in `pi_axera_sd_service/models/`:
    - `.axmodel` files (text_encoder, unet, vae_decoder, vae_encoder) from `realistic-vision-v6-axera-hw/`
