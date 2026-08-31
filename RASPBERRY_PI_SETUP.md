@@ -117,7 +117,15 @@ pi_axera_sd_service/models/clip_base_vision.axmodel
 pi_axera_sd_service/models/clip_base_text.axmodel
 ```
 
-These are **not** produced by the standard model conversion pipeline and are **not tracked in git** (`.gitignore` excludes `*.axmodel`). They come from a separate CLIP export/compile pipeline documented in [img2txt/clip_implementation.md](img2txt/clip_implementation.md), so you'll need to either rebuild them yourself (ONNX export → Pulsar2 compile) or copy them from a previous working deployment. Without them, the service starts and works fine for txt2img/img2img — only the interrogation endpoints return `501`.
+These are **not** produced by the standard model conversion pipeline and are **not tracked directly in this repo's git history** (`.gitignore` excludes `*.axmodel`). They ship in the [clip-interrogator-axera-hw](https://huggingface.co/gregm123456/clip-interrogator-axera-hw) git submodule instead (same pattern as `realistic-vision-v6-axera-hw`). Make sure submodules are initialized, then copy the files over:
+
+```bash
+git submodule update --init --recursive
+cp clip-interrogator-axera-hw/clip_base_vision.axmodel pi_axera_sd_service/models/
+cp clip-interrogator-axera-hw/clip_base_text.axmodel pi_axera_sd_service/models/
+```
+
+If you ever need to rebuild these from scratch instead (e.g. for a different CLIP variant or vocabulary), the export/compile pipeline is documented in [img2txt/clip_implementation.md](img2txt/clip_implementation.md). Without these files, the service starts and works fine for txt2img/img2img — only the interrogation endpoints return `501`.
 
 When these files are present, first startup (and any restart without a warm Hugging Face cache) also downloads `openai/clip-vit-base-patch32` (~1.2GB) from Hugging Face Hub to get the tokenizer/processor and projection weights. This requires outbound internet access; without an `HF_TOKEN` set, anonymous rate limits can occasionally cause a transient failure on a small file even after the large weights download successfully — a simple restart resolves it. See the troubleshooting section below.
 
@@ -233,7 +241,7 @@ Common errors:
 
 - **`501` from `/sdapi/v1/interrogate` or `/sdapi/v1/interrogate/structured`**
   - The startup log will show `CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.`
-  - Verify `pi_axera_sd_service/models/clip_base_vision.axmodel` and `clip_base_text.axmodel` exist (directly in `models/`, not `models/text_encoder/`). See "Optional: Interrogation Model Files" above.
+  - Verify `pi_axera_sd_service/models/clip_base_vision.axmodel` and `clip_base_text.axmodel` exist (directly in `models/`, not `models/text_encoder/`). See "Optional: Interrogation Model Files" above — if the `clip-interrogator-axera-hw` submodule directory is empty, run `git submodule update --init --recursive`.
 
 - **`Failed to load CLIP Interrogator: Can't load image processor for 'openai/clip-vit-base-patch32'...`**
   - This happens when the Hugging Face Hub download of the (small) processor config fails after the large model weights already downloaded — typically an anonymous rate-limit or transient network hiccup, often alongside a `HF_TOKEN` warning in the logs just before it.
