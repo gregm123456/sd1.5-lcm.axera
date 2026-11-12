@@ -91,6 +91,55 @@ def test_missing_or_corrupt_bundle_gives_clear_error():
             assert "sha256" in str(e)
 
 
+def _load_validator():
+    import textwrap
+
+    src = open(os.path.join(HERE, "pi_axera_sd_generator.py")).read()
+    start = src.index("    def _load_valid_cache")
+    end = src.index("    def precompute_text_embeddings")
+    ns = {"os": os, "np": np}
+    exec(textwrap.dedent(src[start:end]), ns)
+
+    class Stub:
+        text_projection = np.zeros((512, 512), dtype=np.float32)
+
+    return lambda path, n: ns["_load_valid_cache"](Stub(), path, n)
+
+
+def test_invalid_embedding_caches_are_rejected_and_removed():
+    load = _load_validator()
+    good = np.random.RandomState(0).randn(4, 512).astype(np.float32)
+    good /= np.linalg.norm(good, axis=-1, keepdims=True)
+    bad_norm = good * 3
+    nan = good.copy()
+    nan[0, 0] = np.nan
+    with tempfile.TemporaryDirectory() as d:
+        def save(name, arr):
+            path = os.path.join(d, name)
+            np.save(path, arr)
+            return path + ".npy"
+
+        p = save("good", good)
+        assert load(p, 4) is not None and os.path.exists(p)
+        cases = {
+            "wrong_rows": (save("rows", good), 5),
+            "wrong_dim": (save("dim", good[:, :256]), 4),
+            "unnormalized": (save("norm", bad_norm), 4),
+            "nan": (save("nan", nan), 4),
+            "int": (save("int", good.astype(np.int32)), 4),
+        }
+        trunc = os.path.join(d, "trunc.npy")
+        raw = open(p, "rb").read()
+        open(trunc, "wb").write(raw[: len(raw) // 2])
+        cases["truncated"] = (trunc, 4)
+        empty = os.path.join(d, "empty.npy")
+        open(empty, "wb").close()
+        cases["empty"] = (empty, 4)
+        for name, (path, n) in cases.items():
+            assert load(path, n) is None, name
+            assert not os.path.exists(path), name
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

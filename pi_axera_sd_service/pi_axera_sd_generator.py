@@ -143,6 +143,28 @@ class CLIPInterrogator:
         if self.cache_dir:
             os.makedirs(self.cache_dir, exist_ok=True)
 
+    def _load_valid_cache(self, path, n_labels):
+        """Return cached embeddings, or None (and remove the file) if truncated/malformed."""
+        try:
+            arr = np.load(path, allow_pickle=False)
+            ok = (
+                arr.ndim == 2
+                and arr.shape == (n_labels, self.text_projection.shape[1])
+                and arr.dtype.kind == "f"
+                and bool(np.isfinite(arr).all())
+                and bool(np.allclose(np.linalg.norm(arr, axis=-1), 1.0, atol=1e-2))
+            )
+        except Exception as e:
+            print(f"Could not read embedding cache {path}: {e}")
+            ok = False
+        if not ok:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            return None
+        return arr
+
     def precompute_text_embeddings(self, labels):
         # Generate a hash of the labels and the template to use as a cache key
         template = "a photo of a {}"
@@ -154,9 +176,12 @@ class CLIPInterrogator:
             cache_file = os.path.join(self.cache_dir, f"clip_cache_{labels_hash}.npy")
             if os.path.exists(cache_file):
                 print(f"Loading cached embeddings from {cache_file}...")
-                self.cached_embeddings = np.load(cache_file)
-                self.cached_labels = labels
-                return
+                cached = self._load_valid_cache(cache_file, len(labels))
+                if cached is not None:
+                    self.cached_embeddings = cached
+                    self.cached_labels = labels
+                    return
+                print("Cached embeddings invalid; rebuilding.")
 
         print(f"Pre-computing embeddings for {len(labels)} labels...")
         text_embs = []
@@ -186,7 +211,13 @@ class CLIPInterrogator:
         
         if cache_file:
             print(f"Saving embeddings to cache: {cache_file}")
-            np.save(cache_file, self.cached_embeddings)
+            # Atomic write: a power loss must never leave a partial cache file.
+            tmp_file = f"{cache_file}.{os.getpid()}.tmp"
+            with open(tmp_file, "wb") as f:
+                np.save(f, self.cached_embeddings)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, cache_file)
             
         print(f"Embeddings pre-computed for {len(labels)} labels in {time.time() - start_time:.2f}s.")
 
