@@ -57,7 +57,7 @@ python -m pip install --upgrade pip
 All actual model inference (text encoder, UNet, VAE) runs on the AX650N NPU via `axengine`. `torch` is only used for lightweight CPU-side glue (scheduler math, latent generation, tensor/numpy conversions) — never GPU compute. Installing the default `torch` package pulls in ~2 GB of unusable NVIDIA CUDA dependencies (cublas, cudnn, nccl, triton, etc.), so install the CPU-only build instead:
 
 ```bash
-pip install flask pillow numpy transformers axengine cffi ml-dtypes
+pip install flask pillow numpy "transformers==5.16.1" axengine cffi ml-dtypes
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
@@ -138,7 +138,7 @@ cp clip-interrogator-axera-hw/clip_base_text.axmodel pi_axera_sd_service/models/
 
 If you ever need to rebuild these from scratch instead (e.g. for a different CLIP variant or vocabulary), the export/compile pipeline is documented in [img2txt/clip_implementation.md](img2txt/clip_implementation.md). Without these files, the service starts and works fine for txt2img/img2img — only the interrogation endpoints return `501`.
 
-When these files are present, first startup (and any restart without a warm Hugging Face cache) also downloads `openai/clip-vit-base-patch32` (~1.2GB) from Hugging Face Hub to get the tokenizer/processor and projection weights. This requires outbound internet access; without an `HF_TOKEN` set, anonymous rate limits can occasionally cause a transient failure on a small file even after the large weights download successfully — a simple restart resolves it. See the troubleshooting section below.
+The interrogator needs no internet access: the CLIP tokenizer/processor/projection assets ship in `pi_axera_sd_service/clip_assets/` and the service runs with `HF_HUB_OFFLINE=1`. `GET /health` reports readiness (`200` only once the interrogator passed its startup self-test). See the troubleshooting section below.
 
 ## Step 5: Run the Service Manually (Testing)
 
@@ -254,9 +254,9 @@ Common errors:
   - The startup log will show `CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.`
   - Verify `pi_axera_sd_service/models/clip_base_vision.axmodel` and `clip_base_text.axmodel` exist (directly in `models/`, not `models/text_encoder/`). See "Optional: Interrogation Model Files" above — if the `clip-interrogator-axera-hw` submodule directory is empty, run `git submodule update --init --recursive`.
 
-- **`Failed to load CLIP Interrogator: Can't load image processor for 'openai/clip-vit-base-patch32'...`**
-  - This happens when the Hugging Face Hub download of the (small) processor config fails after the large model weights already downloaded — typically an anonymous rate-limit or transient network hiccup, often alongside a `HF_TOKEN` warning in the logs just before it.
-  - Fix: restart the service (`sudo systemctl restart pi_axera_sd_generator`) — most of the ~1.2GB is already cached locally, so only the small file needs to succeed. Setting an `HF_TOKEN` environment variable reduces the chance of this recurring.
+- **`Failed to load CLIP Interrogator: CLIP asset missing / corrupt / not found...`** (also visible via `curl localhost:5000/health`)
+  - The local bundle in `pi_axera_sd_service/clip_assets/` is incomplete or modified. Restore it with `git checkout -- pi_axera_sd_service/clip_assets` (or regenerate with `python pi_axera_sd_service/export_clip_assets.py`, which needs the Hub once).
+  - No internet access or Hugging Face token is required at runtime.
 
 **Network connectivity:**
 

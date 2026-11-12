@@ -1,0 +1,11 @@
+{
+  "source": "openai/clip-vit-base-patch32",
+  "revision": "main",
+  "commit_hash": "3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268",
+  "files": {
+    "clip_projections.npz": "71f2dcf9a0fab5ab74e4b269bb5a87bdeb7bbc29994519b6606c7a3880ecf348",
+    "processor_config.json": "38d5457ba35b9eee2b4fb2b8d3f151ca8cb5932348e6979d1c5d8f05966ce810",
+    "tokenizer.json": "6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35",
+    "tokenizer_config.json": "67f65dfab6239143c5d7af7d58714e2002edec39ac548ddf2da2495d0bb4e463"
+  }
+}

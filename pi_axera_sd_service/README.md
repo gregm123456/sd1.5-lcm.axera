@@ -123,7 +123,7 @@ Quick summary:
 
 2. **Install dependencies:**
    ```bash
-   pip install flask transformers pillow numpy axengine cffi ml-dtypes
+   pip install flask "transformers==5.16.1" pillow numpy axengine cffi ml-dtypes
    pip install torch --index-url https://download.pytorch.org/whl/cpu
    ```
    (`torch` only does lightweight CPU-side glue here — all model inference runs on the NPU via `axengine` — so the CPU-only wheel avoids ~2 GB of unusable NVIDIA CUDA downloads. `axengine` is installed from the wheel in the repo root, not PyPI.)
@@ -153,7 +153,9 @@ Quick summary:
 
    These are **not** built by the standard txt2img/img2img conversion pipeline and are **not committed to this repo's git history** (`.gitignore` excludes `*.axmodel`/`*.onnx`) — they live in the separate Hugging Face-hosted submodule instead, built via the `img2txt/` CLIP export/compile pipeline (see [img2txt/clip_implementation.md](../img2txt/clip_implementation.md)). If either file is missing from `pi_axera_sd_service/models/`, both interrogation endpoints return `501`, and the startup log will say `CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.`
    
-   Note: on first load (and on every restart unless cached), the interrogator also downloads `openai/clip-vit-base-patch32` (tokenizer/processor/projection weights, ~1.2GB) from Hugging Face Hub — this requires outbound internet access. Anonymous (no `HF_TOKEN`) requests are rate-limited and can intermittently fail on a small file after the large weights succeed; if this happens, simply restart the service. Setting `HF_TOKEN` reduces the odds of this.
+   Note: the interrogator needs **no internet access**. Its tokenizer, processor config and CLIP projection matrices are committed in `pi_axera_sd_service/clip_assets/` (~6MB, checksummed by `MANIFEST.json` and verified at startup), and the service runs with `HF_HUB_OFFLINE=1`. The bundle was exported with and is tested against `transformers==5.16.1` (pinned in the install command above); re-export and re-run the offline tests when upgrading. Cold start with an empty embedding cache (all ~20k tags precomputed) took ~2 minutes offline; warm start ~30s. To regenerate the bundle (the only step that touches Hugging Face Hub): `python pi_axera_sd_service/export_clip_assets.py`.
+
+   **Readiness:** `GET /health` (alias `/ready`) returns `200` only when the interrogator loaded and passed a startup self-test; otherwise `503` with the reason (`disabled` = axmodels absent, `failed` = e.g. bad/missing `clip_assets`). The `501` interrogation responses include the same reason. Offline checks: `python pi_axera_sd_service/test_offline_interrogate.py`.
 
 4. **Install systemd service:**
    ```bash
@@ -182,7 +184,8 @@ Default environment variables (set in systemd service file):
 | `CLIP_VISION_MODEL` | `<TEXT_MODEL_DIR>/clip_base_vision.axmodel` | CLIP vision encoder for interrogation (optional; disables `/sdapi/v1/interrogate*` if missing) |
 | `CLIP_TEXT_MODEL` | `<TEXT_MODEL_DIR>/clip_base_text.axmodel` | CLIP text encoder for interrogation (optional; disables `/sdapi/v1/interrogate*` if missing) |
 | `INTERROGATE_TAGS_FILE` | `pi_axera_sd_service/imagenet_21k_labels_clean.txt` | Tag vocabulary used for flat (non-structured) interrogation |
-| `HF_TOKEN` | (unset) | Hugging Face token, used when loading `openai/clip-vit-base-patch32` for the interrogator's tokenizer/processor/projection weights; avoids anonymous rate-limit errors |
+| `CLIP_ASSETS_DIR` | `pi_axera_sd_service/clip_assets` | Local CLIP tokenizer/processor/projection bundle (verified against `MANIFEST.json` at startup) |
+| `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | `1` (set by the service) | Hugging Face Hub access is disabled; the service never downloads models at runtime |
 
 To override at runtime (manual testing), export environment variables before running the script:
 

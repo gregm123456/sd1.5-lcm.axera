@@ -1,10 +1,16 @@
+import os
+
+# This service never needs the Hugging Face Hub at runtime: all models and CLIP
+# assets are local. Force offline mode before transformers is imported.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 from typing import List, Union
 import numpy as np
 import axengine
 import torch
 from PIL import Image
-from transformers import CLIPTokenizer, PreTrainedTokenizer, CLIPProcessor, CLIPModel
-import os
+from transformers import CLIPTokenizer, PreTrainedTokenizer, CLIPProcessor
 import time
 import threading
 import base64
@@ -85,26 +91,52 @@ DEFAULT_TAGS = [
 ]
 
 
+CLIP_PROJECTIONS_FILE = "clip_projections.npz"
+
+
+def verify_clip_assets(assets_dir):
+    """Check the local CLIP bundle against its MANIFEST; raise RuntimeError naming the problem."""
+    manifest_path = os.path.join(assets_dir, "MANIFEST.json")
+    if not os.path.isfile(manifest_path):
+        raise RuntimeError(
+            f"CLIP assets not found: {manifest_path} is missing. "
+            "Restore pi_axera_sd_service/clip_assets/ (see export_clip_assets.py)."
+        )
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    for name, expected in manifest.get("files", {}).items():
+        path = os.path.join(assets_dir, name)
+        if not os.path.isfile(path):
+            raise RuntimeError(f"CLIP asset missing: {path}")
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        if h.hexdigest() != expected:
+            raise RuntimeError(f"CLIP asset corrupt (sha256 mismatch): {path}")
+    if CLIP_PROJECTIONS_FILE not in manifest.get("files", {}):
+        raise RuntimeError(f"CLIP manifest does not list {CLIP_PROJECTIONS_FILE}")
+
+
 class CLIPInterrogator:
-    def __init__(self, vision_model_path, text_model_path, cache_dir=None):
+    def __init__(self, vision_model_path, text_model_path, cache_dir=None, assets_dir=None):
+        assets_dir = assets_dir or CLIP_ASSETS_DIR
+        print(f"Verifying CLIP assets: {assets_dir}")
+        verify_clip_assets(assets_dir)
+
         print(f"Loading CLIP Vision Model: {vision_model_path}")
         self.vision_session = axengine.InferenceSession(vision_model_path)
         print(f"Loading CLIP Text Model: {text_model_path}")
         self.text_session = axengine.InferenceSession(text_model_path)
-        
-        tokenizer_dir = "openai/clip-vit-base-patch32"
-        print(f"Loading CLIP Model for projections and tokenizer: {tokenizer_dir}")
-        self.model = CLIPModel.from_pretrained(tokenizer_dir)
-        self.processor = CLIPProcessor.from_pretrained(tokenizer_dir)
-        self.tokenizer = CLIPTokenizer.from_pretrained(tokenizer_dir)
-        
-        # Extract projection weights for CPU application
-        self.visual_projection = self.model.visual_projection.weight.detach().numpy().T
-        self.text_projection = self.model.text_projection.weight.detach().numpy().T
-        
-        # We can delete the model to save RAM if needed
-        del self.model
-        
+
+        # Processor/tokenizer and the two projection matrices come from the local
+        # bundle; the full CLIP PyTorch model is never loaded.
+        self.processor = CLIPProcessor.from_pretrained(assets_dir, local_files_only=True)
+        self.tokenizer = CLIPTokenizer.from_pretrained(assets_dir, local_files_only=True)
+        with np.load(os.path.join(assets_dir, CLIP_PROJECTIONS_FILE)) as proj:
+            self.visual_projection = proj["visual_projection"]
+            self.text_projection = proj["text_projection"]
+
         self.cached_embeddings = None
         self.cached_labels = None
         self.cache_dir = cache_dir
@@ -280,13 +312,16 @@ VAE_DECODER_MODEL = os.environ.get("VAE_DECODER_MODEL", "./models/vae_decoder.ax
 VAE_ENCODER_MODEL = os.environ.get("VAE_ENCODER_MODEL", "./models/vae_encoder.axmodel")
 CLIP_VISION_MODEL = os.environ.get("CLIP_VISION_MODEL", os.path.join(TEXT_MODEL_DIR, "clip_base_vision.axmodel"))
 CLIP_TEXT_MODEL = os.environ.get("CLIP_TEXT_MODEL", os.path.join(TEXT_MODEL_DIR, "clip_base_text.axmodel"))
+CLIP_ASSETS_DIR = os.environ.get(
+    "CLIP_ASSETS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "clip_assets")
+)
 TIME_INPUT_TXT2IMG = os.environ.get("TIME_INPUT_TXT2IMG", "./models/time_input_txt2img.npy")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "./txt2img_server_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Load tokenizer and models once
 print("Loading tokenizer and models (this may take a moment)...")
-tokenizer = CLIPTokenizer.from_pretrained(os.path.join(TEXT_MODEL_DIR, "tokenizer"))
+tokenizer = CLIPTokenizer.from_pretrained(os.path.join(TEXT_MODEL_DIR, "tokenizer"), local_files_only=True)
 text_encoder = axengine.InferenceSession(TEXT_ENCODER_MODEL)
 unet_session_main = axengine.InferenceSession(UNET_MODEL)
 vae_decoder = axengine.InferenceSession(VAE_DECODER_MODEL)
@@ -309,14 +344,29 @@ if os.path.exists(TAGS_FILE):
     except Exception as e:
         print(f"Error loading tags file: {e}")
 
+interrogator_status = {"state": "disabled", "reason": "CLIP axmodel files not found"}
+
+
+def _interrogator_self_test(interrogator):
+    """Run one real structured inference on a synthetic image to prove the path works."""
+    image = Image.new("RGB", (224, 224), (128, 128, 128))
+    results, _ = interrogator.classify_categories(image, {"self_test": ["a", "b"]})
+    if "self_test" not in results:
+        raise RuntimeError("self-test produced no result")
+
+
 if os.path.exists(CLIP_VISION_MODEL) and os.path.exists(CLIP_TEXT_MODEL):
     try:
         cache_dir = os.path.join(TEXT_MODEL_DIR, "clip_cache")
         clip_interrogator = CLIPInterrogator(CLIP_VISION_MODEL, CLIP_TEXT_MODEL, cache_dir=cache_dir)
         # Pre-compute embeddings for the tags
         clip_interrogator.precompute_text_embeddings(interrogate_tags)
+        _interrogator_self_test(clip_interrogator)
+        interrogator_status = {"state": "ok", "reason": None}
     except Exception as e:
-        print(f"Failed to load CLIP Interrogator: {e}")
+        clip_interrogator = None
+        interrogator_status = {"state": "failed", "reason": str(e)}
+        print(f"Failed to load CLIP Interrogator: {e}", flush=True)
 else:
     print("CLIP Interrogator models not found, /sdapi/v1/interrogate will be disabled.")
 
@@ -799,10 +849,24 @@ def sdapi_img2img():
         return jsonify({"error": str(e)}), 500
 
 
+def _interrogator_unavailable():
+    reason = interrogator_status["reason"]
+    msg = f"CLIP Interrogator is {interrogator_status['state']}"
+    return jsonify({"error": f"{msg}: {reason}" if reason else msg}), 501
+
+
+@app.route("/health", methods=["GET"])
+@app.route("/ready", methods=["GET"])
+def health():
+    """Readiness: reflects the startup state, including a successful interrogation self-test."""
+    ready = interrogator_status["state"] == "ok"
+    return jsonify({"status": "ready" if ready else "degraded", "interrogator": interrogator_status}), (200 if ready else 503)
+
+
 @app.route("/sdapi/v1/interrogate", methods=["POST"])
 def sdapi_interrogate():
     if clip_interrogator is None:
-        return jsonify({"error": "CLIP Interrogator is not initialized (models missing?)"}), 501
+        return _interrogator_unavailable()
 
     try:
         data = request.get_json(force=True)
@@ -856,7 +920,7 @@ def sdapi_interrogate():
 @app.route("/sdapi/v1/interrogate/structured", methods=["POST"])
 def sdapi_interrogate_structured():
     if clip_interrogator is None:
-        return jsonify({"error": "CLIP Interrogator is not initialized"}), 501
+        return _interrogator_unavailable()
 
     try:
         data = request.get_json(force=True)
